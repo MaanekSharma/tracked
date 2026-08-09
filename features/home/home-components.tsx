@@ -1,15 +1,15 @@
 import { Check, Trash2 } from "lucide-react";
 import { completeChoreAction, createChoreAction, deleteChoreAction, markBillPaidAction, updateChoreAction } from "@/features/actions";
+import { CalendarRecurrenceFields } from "@/features/calendar/calendar-form-fields";
 import { isOverdue } from "@/lib/calculations";
 import { formatDate, money, todayISO } from "@/lib/utils";
-import { recurrenceLabels, type Bill, type Chore } from "@/types/domain";
+import { type Bill, type Chore } from "@/types/domain";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FormGrid, HiddenRedirect, SelectField, TextField, TextareaField } from "@/components/ui/form";
 
-const recurrenceOptions = Object.entries(recurrenceLabels).map(([value, label]) => ({ value, label }));
 const statusOptions = [
   { value: "active", label: "Active" },
   { value: "paused", label: "Paused" },
@@ -30,7 +30,7 @@ export function ChoreManager({ chores }: { chores: Chore[] }) {
           <FormGrid>
             <TextField label="Title" name="title" required />
             <TextField label="Room / Category" name="room" />
-            <SelectField label="Frequency" name="frequency" defaultValue="weekly" options={recurrenceOptions} />
+            <CalendarRecurrenceFields name="frequency" label="Frequency" recurrence="weekly" />
             <TextField label="Next due" name="next_due_date" type="date" defaultValue={todayISO()} />
             <SelectField label="Status" name="status" defaultValue="active" options={statusOptions} />
           </FormGrid>
@@ -59,7 +59,15 @@ export function ChoreManager({ chores }: { chores: Chore[] }) {
                   <FormGrid>
                     <TextField label="Title" name="title" defaultValue={chore.title} required />
                     <TextField label="Room / Category" name="room" defaultValue={chore.room} />
-                    <SelectField label="Frequency" name="frequency" defaultValue={chore.frequency} options={recurrenceOptions} />
+                    <CalendarRecurrenceFields
+                      name="frequency"
+                      label="Frequency"
+                      recurrence={chore.frequency}
+                      interval={chore.recurrence_interval}
+                      weekdays={chore.recurrence_days_of_week}
+                      endDate={chore.recurrence_end_date}
+                      count={chore.recurrence_count}
+                    />
                     <TextField label="Next due" name="next_due_date" type="date" defaultValue={chore.next_due_date} />
                     <TextField label="Last completed" name="last_completed_date" type="date" defaultValue={chore.last_completed_date} />
                     <SelectField label="Status" name="status" defaultValue={chore.status} options={statusOptions} />
@@ -71,7 +79,6 @@ export function ChoreManager({ chores }: { chores: Chore[] }) {
                   <form action={completeChoreAction}>
                     <HiddenRedirect to="/home" />
                     <input type="hidden" name="id" value={chore.id} />
-                    <input type="hidden" name="frequency" value={chore.frequency} />
                     <Button type="submit" variant="outline" size="sm">
                       <Check className="size-4" />
                       Complete

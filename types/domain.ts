@@ -12,7 +12,9 @@ export type AccountType =
 export type TransactionType = "income" | "expense" | "transfer";
 export type TransactionSource = "manual" | "plaid";
 export type CategorySource = "plaid" | "rule" | "manual";
-export type Recurrence = "none" | "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+export type Recurrence = "none" | "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+export type CalendarEventRecurrence = Recurrence;
+export type CalendarSourceType = "event" | "bill" | "task" | "chore";
 export type Priority = "low" | "medium" | "high" | "urgent";
 export type TaskStatus = "open" | "completed" | "archived";
 export type GoalStatus = "active" | "completed" | "archived";
@@ -144,6 +146,10 @@ export type Bill = {
   next_due_date: string;
   recurring: boolean;
   recurrence: Recurrence;
+  recurrence_interval: number;
+  recurrence_days_of_week: number[] | null;
+  recurrence_end_date: string | null;
+  recurrence_count: number | null;
   autopay: boolean;
   active: boolean;
   notes: string | null;
@@ -194,6 +200,10 @@ export type Task = {
   due_date: string | null;
   due_time: string | null;
   recurrence: Recurrence;
+  recurrence_interval: number;
+  recurrence_days_of_week: number[] | null;
+  recurrence_end_date: string | null;
+  recurrence_count: number | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -238,8 +248,16 @@ export type CalendarEvent = {
   all_day: boolean;
   location: string | null;
   category: string | null;
+  recurrence: CalendarEventRecurrence;
+  recurrence_interval: number;
+  recurrence_days_of_week: number[] | null;
+  recurrence_end_date: string | null;
+  recurrence_count: number | null;
   created_at: string;
   updated_at: string;
+  seriesId?: string | null;
+  occurrenceDate?: string;
+  isVirtualOccurrence?: boolean;
 };
 
 export type ChoreCompletion = {
@@ -259,6 +277,10 @@ export type Chore = {
   title: string;
   description: string | null;
   frequency: Recurrence;
+  recurrence_interval: number;
+  recurrence_days_of_week: number[] | null;
+  recurrence_end_date: string | null;
+  recurrence_count: number | null;
   next_due_date: string | null;
   last_completed_date: string | null;
   status: "active" | "paused" | "completed" | "archived";
@@ -269,10 +291,32 @@ export type Chore = {
 
 export type UpcomingItem = {
   id: string;
+  sourceId: string;
+  sourceType: CalendarSourceType;
   title: string;
   date: string;
-  type: "bill" | "event" | "chore" | "task";
+  type: CalendarSourceType;
   detail?: string;
+};
+
+export type CalendarItem = {
+  id: string;
+  user_id: string;
+  sourceId: string;
+  sourceType: CalendarSourceType;
+  title: string;
+  startAt: string;
+  endAt: string | null;
+  allDay: boolean;
+  detail?: string;
+  recurrence: CalendarEventRecurrence;
+  recurrenceInterval: number;
+  recurrenceDaysOfWeek: number[] | null;
+  recurrenceEndDate: string | null;
+  recurrenceCount: number | null;
+  seriesId?: string | null;
+  occurrenceDate?: string;
+  isVirtualOccurrence?: boolean;
 };
 
 export const accountTypeLabels: Record<AccountType, string> = {
@@ -289,8 +333,19 @@ export const accountTypeLabels: Record<AccountType, string> = {
 
 export const recurrenceLabels: Record<Recurrence, string> = {
   none: "One-time",
+  daily: "Daily",
   weekly: "Weekly",
-  biweekly: "Biweekly",
+  biweekly: "Every 2 weeks",
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  yearly: "Yearly",
+};
+
+export const calendarEventRecurrenceLabels: Record<CalendarEventRecurrence, string> = {
+  none: "One-time",
+  daily: "Daily",
+  weekly: "Weekly",
+  biweekly: "Every 2 weeks",
   monthly: "Monthly",
   quarterly: "Quarterly",
   yearly: "Yearly",

@@ -141,14 +141,14 @@ export default async function OverviewPage({
                   <div key={task.id} className="flex items-center gap-3 rounded-md border bg-background p-3">
                     <form action={completeTaskAction}>
                       <HiddenRedirect to="/overview" />
-                      <input type="hidden" name="id" value={task.id} />
+                      <input type="hidden" name="id" value={task.sourceId} />
                       <Button size="icon" variant="outline" aria-label={`Complete ${task.title}`}>
                         <Check className="size-4" />
                       </Button>
                     </form>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{task.title}</p>
-                      <p className="text-xs text-muted-foreground">{task.priority} priority</p>
+                      <p className="text-xs text-muted-foreground">{task.detail ?? "Task due"}</p>
                     </div>
                   </div>
                 ))}
@@ -248,7 +248,6 @@ export default async function OverviewPage({
                     <form action={completeChoreAction}>
                       <HiddenRedirect to="/overview" />
                       <input type="hidden" name="id" value={chore.id} />
-                      <input type="hidden" name="frequency" value={chore.frequency} />
                       <Button size="sm" variant="outline">Done</Button>
                     </form>
                   </div>

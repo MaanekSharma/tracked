@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Check, RotateCcw, Trash2 } from "lucide-react";
 import { completeTaskAction, createTaskAction, deleteTaskAction, reopenTaskAction, updateTaskAction } from "@/features/actions";
+import { CalendarRecurrenceFields } from "@/features/calendar/calendar-form-fields";
 import { formatDate, todayISO } from "@/lib/utils";
-import { type Task, recurrenceLabels } from "@/types/domain";
+import { type Task } from "@/types/domain";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +21,6 @@ const statusOptions = [
   { value: "completed", label: "Completed" },
   { value: "archived", label: "Archived" },
 ];
-const recurrenceOptions = Object.entries(recurrenceLabels).map(([value, label]) => ({ value, label }));
 
 export function TaskViewNav({ active }: { active: string }) {
   const items = [
@@ -56,7 +56,7 @@ export function TaskManager({ tasks, view }: { tasks: Task[]; view: string }) {
             <SelectField label="Priority" name="priority" defaultValue="medium" options={priorityOptions} />
             <TextField label="Due date" name="due_date" type="date" defaultValue={view === "today" ? todayISO() : undefined} />
             <TextField label="Due time" name="due_time" type="time" />
-            <SelectField label="Recurrence" name="recurrence" defaultValue="none" options={recurrenceOptions} />
+            <CalendarRecurrenceFields />
             <SelectField label="Status" name="status" defaultValue="open" options={statusOptions} />
           </FormGrid>
           <TextareaField label="Description" name="description" className="mt-4" />
@@ -89,7 +89,13 @@ export function TaskManager({ tasks, view }: { tasks: Task[]; view: string }) {
                     <SelectField label="Priority" name="priority" defaultValue={task.priority} options={priorityOptions} />
                     <TextField label="Due date" name="due_date" type="date" defaultValue={task.due_date} />
                     <TextField label="Due time" name="due_time" type="time" defaultValue={task.due_time} />
-                    <SelectField label="Recurrence" name="recurrence" defaultValue={task.recurrence} options={recurrenceOptions} />
+                    <CalendarRecurrenceFields
+                      recurrence={task.recurrence}
+                      interval={task.recurrence_interval}
+                      weekdays={task.recurrence_days_of_week}
+                      endDate={task.recurrence_end_date}
+                      count={task.recurrence_count}
+                    />
                     <SelectField label="Status" name="status" defaultValue={task.status} options={statusOptions} />
                   </FormGrid>
                   <TextareaField label="Description" name="description" defaultValue={task.description} className="mt-4" />

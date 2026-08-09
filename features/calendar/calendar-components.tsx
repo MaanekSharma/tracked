@@ -14,25 +14,24 @@ import {
 } from "date-fns";
 import { CalendarPlus, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { createCalendarEventAction, deleteCalendarEventAction, updateCalendarEventAction } from "@/features/actions";
-import { formatDate, money, todayISO } from "@/lib/utils";
-import type { Bill, CalendarEvent, Chore, Task } from "@/types/domain";
+import { CalendarRecurrenceFields } from "@/features/calendar/calendar-form-fields";
+import { calendarDateKey, calendarItemDateKey, dateTimeLocalInputValue, DEFAULT_CALENDAR_TIME_ZONE } from "@/lib/calendar-recurrence";
+import { todayISO } from "@/lib/utils";
+import { calendarEventRecurrenceLabels, type CalendarEvent, type CalendarItem } from "@/types/domain";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CheckboxField, FormGrid, HiddenRedirect, TextField, TextareaField } from "@/components/ui/form";
 
-type CalendarItem = {
-  id: string;
-  date: string;
-  title: string;
-  type: "event" | "task" | "bill" | "chore";
-  detail?: string;
-};
+function eventDisplayDate(value: string, timeZone: string) {
+  return format(parse(calendarDateKey(value, timeZone), "yyyy-MM-dd", new Date()), "MMM d, yyyy");
+}
 
-function eventInputValue(value: string | null) {
-  if (!value) return "";
-  return value.slice(0, 16);
+function eventRecurrenceLabel(event: CalendarEvent) {
+  if ((event.recurrence ?? "none") === "none") return null;
+  if (event.recurrence === "weekly" && event.recurrence_interval === 2) return "Every 2 weeks";
+  return calendarEventRecurrenceLabels[event.recurrence];
 }
 
 function monthFromParam(month: string | undefined) {
@@ -42,16 +41,12 @@ function monthFromParam(month: string | undefined) {
 
 export function CalendarMonth({
   month,
-  events,
-  tasks,
-  bills,
-  chores,
+  items,
+  timeZone = DEFAULT_CALENDAR_TIME_ZONE,
 }: {
   month: string | undefined;
-  events: CalendarEvent[];
-  tasks: Task[];
-  bills: Bill[];
-  chores: Chore[];
+  items: CalendarItem[];
+  timeZone?: string;
 }) {
   const current = monthFromParam(month);
   const days = eachDayOfInterval({
@@ -59,40 +54,13 @@ export function CalendarMonth({
     end: endOfWeek(endOfMonth(current), { weekStartsOn: 0 }),
   });
 
-  const items: CalendarItem[] = [
-    ...events.map((event) => ({
-      id: event.id,
-      date: event.start_at.slice(0, 10),
-      title: event.title,
-      type: "event" as const,
-      detail: event.location ?? event.category ?? undefined,
-    })),
-    ...tasks
-      .filter((task) => task.due_date)
-      .map((task) => ({
-        id: task.id,
-        date: task.due_date ?? "",
-        title: task.title,
-        type: "task" as const,
-        detail: task.priority,
-      })),
-    ...bills.map((bill) => ({
-      id: bill.id,
-      date: bill.next_due_date,
-      title: bill.name,
-      type: "bill" as const,
-      detail: money(bill.amount, true),
-    })),
-    ...chores
-      .filter((chore) => chore.next_due_date)
-      .map((chore) => ({
-        id: chore.id,
-        date: chore.next_due_date ?? "",
-        title: chore.title,
-        type: "chore" as const,
-        detail: chore.room ?? undefined,
-      })),
-  ];
+  const calendarItems = items.map((item) => ({
+    id: item.id,
+    date: calendarItemDateKey(item, timeZone),
+    title: item.title,
+    type: item.sourceType,
+    detail: item.detail,
+  }));
 
   return (
     <Card>
@@ -122,7 +90,7 @@ export function CalendarMonth({
             </div>
           ))}
           {days.map((day) => {
-            const dayItems = items.filter((item) => isSameDay(new Date(`${item.date}T00:00:00`), day)).slice(0, 4);
+            const dayItems = calendarItems.filter((item) => isSameDay(new Date(`${item.date}T00:00:00`), day)).slice(0, 4);
             return (
               <div key={day.toISOString()} className={`min-h-28 bg-background p-2 ${isSameMonth(day, current) ? "" : "opacity-45"}`}>
                 <div className="mb-2 flex items-center justify-between">
@@ -144,7 +112,7 @@ export function CalendarMonth({
   );
 }
 
-export function EventManager({ events }: { events: CalendarEvent[] }) {
+export function EventManager({ events, timeZone = DEFAULT_CALENDAR_TIME_ZONE }: { events: CalendarEvent[]; timeZone?: string }) {
   return (
     <Card>
       <CardHeader>
@@ -163,6 +131,7 @@ export function EventManager({ events }: { events: CalendarEvent[] }) {
             <TextField label="End" name="end_at" type="datetime-local" />
             <TextField label="Location" name="location" />
             <TextField label="Category" name="category" />
+            <CalendarRecurrenceFields />
           </FormGrid>
           <CheckboxField label="All day" name="all_day" />
           <TextareaField label="Description" name="description" className="mt-4" />
@@ -171,15 +140,20 @@ export function EventManager({ events }: { events: CalendarEvent[] }) {
 
         {events.length ? (
           <div className="space-y-3">
-            {events.map((event) => (
-              <details key={event.id} className="rounded-lg border bg-background p-4">
+            {events.map((event) => {
+              const recurrenceLabel = eventRecurrenceLabel(event);
+              return (
+                <details key={event.id} className="rounded-lg border bg-background p-4">
                 <summary className="cursor-pointer list-none">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="font-semibold">{event.title}</p>
-                      <p className="text-sm text-muted-foreground">{formatDate(event.start_at)}{event.location ? ` - ${event.location}` : ""}</p>
+                      <p className="text-sm text-muted-foreground">{eventDisplayDate(event.start_at, timeZone)}{event.location ? ` - ${event.location}` : ""}</p>
                     </div>
-                    {event.all_day ? <Badge variant="secondary">All day</Badge> : null}
+                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                      {recurrenceLabel ? <Badge variant="secondary">{recurrenceLabel}</Badge> : null}
+                      {event.all_day ? <Badge variant="secondary">All day</Badge> : null}
+                    </div>
                   </div>
                 </summary>
                 <form action={updateCalendarEventAction} className="mt-4 border-t pt-4">
@@ -187,10 +161,17 @@ export function EventManager({ events }: { events: CalendarEvent[] }) {
                   <input type="hidden" name="id" value={event.id} />
                   <FormGrid>
                     <TextField label="Title" name="title" defaultValue={event.title} required />
-                    <TextField label="Start" name="start_at" type="datetime-local" defaultValue={eventInputValue(event.start_at)} required />
-                    <TextField label="End" name="end_at" type="datetime-local" defaultValue={eventInputValue(event.end_at)} />
+                    <TextField label="Start" name="start_at" type="datetime-local" defaultValue={dateTimeLocalInputValue(event.start_at, timeZone)} required />
+                    <TextField label="End" name="end_at" type="datetime-local" defaultValue={dateTimeLocalInputValue(event.end_at, timeZone)} />
                     <TextField label="Location" name="location" defaultValue={event.location} />
                     <TextField label="Category" name="category" defaultValue={event.category} />
+                    <CalendarRecurrenceFields
+                      recurrence={event.recurrence}
+                      interval={event.recurrence_interval}
+                      weekdays={event.recurrence_days_of_week}
+                      endDate={event.recurrence_end_date}
+                      count={event.recurrence_count}
+                    />
                   </FormGrid>
                   <div className="mt-4">
                     <CheckboxField label="All day" name="all_day" defaultChecked={event.all_day} />
@@ -207,7 +188,8 @@ export function EventManager({ events }: { events: CalendarEvent[] }) {
                   </Button>
                 </form>
               </details>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <EmptyState title="No calendar events" description="Create an event here, or add due dates to tasks, bills, and chores." />

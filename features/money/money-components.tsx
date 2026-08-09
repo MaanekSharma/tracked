@@ -24,13 +24,13 @@ import {
   updateTransactionAction,
   upsertBudgetAction,
 } from "@/features/actions";
+import { CalendarRecurrenceFields } from "@/features/calendar/calendar-form-fields";
 import { PlaidAccountActions, PlaidConnectButton } from "@/features/plaid/plaid-components";
 import { getBudgetProgress, normalizeSubscriptionCost } from "@/lib/calculations";
 import { formatDate, money, monthStartISO, todayISO } from "@/lib/utils";
 import {
   accountTypeLabels,
   billingFrequencyLabels,
-  recurrenceLabels,
   type Account,
   type Bill,
   type Budget,
@@ -47,7 +47,6 @@ import { CheckboxField, FormGrid, HiddenRedirect, SelectField, TextField, Textar
 import { Progress } from "@/components/ui/progress";
 
 const accountTypeOptions = Object.entries(accountTypeLabels).map(([value, label]) => ({ value, label }));
-const recurrenceOptions = Object.entries(recurrenceLabels).map(([value, label]) => ({ value, label }));
 const billingFrequencyOptions = Object.entries(billingFrequencyLabels).map(([value, label]) => ({ value, label }));
 const transactionTypeOptions = [
   { value: "", label: "All types" },
@@ -460,7 +459,7 @@ export function BillsManager({
             <TextField label="Next due date" name="next_due_date" type="date" defaultValue={todayISO()} required />
             <SelectField label="Category" name="category_id" options={categoryOptions(categories)} />
             <SelectField label="Pay from" name="account_id" options={accountOptions(accounts)} />
-            <SelectField label="Recurrence" name="recurrence" defaultValue="monthly" options={recurrenceOptions} />
+            <CalendarRecurrenceFields recurrence="monthly" />
           </FormGrid>
           <div className="mt-4 grid gap-2 sm:grid-cols-3">
             <CheckboxField label="Recurring" name="recurring" defaultChecked />
@@ -497,7 +496,13 @@ export function BillsManager({
                     <TextField label="Next due date" name="next_due_date" type="date" defaultValue={bill.next_due_date} required />
                     <SelectField label="Category" name="category_id" defaultValue={bill.category_id} options={categoryOptions(categories)} />
                     <SelectField label="Pay from" name="account_id" defaultValue={bill.account_id} options={accountOptions(accounts)} />
-                    <SelectField label="Recurrence" name="recurrence" defaultValue={bill.recurrence} options={recurrenceOptions} />
+                    <CalendarRecurrenceFields
+                      recurrence={bill.recurrence}
+                      interval={bill.recurrence_interval}
+                      weekdays={bill.recurrence_days_of_week}
+                      endDate={bill.recurrence_end_date}
+                      count={bill.recurrence_count}
+                    />
                   </FormGrid>
                   <div className="mt-4 grid gap-2 sm:grid-cols-3">
                     <CheckboxField label="Recurring" name="recurring" defaultChecked={bill.recurring} />

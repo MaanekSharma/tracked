@@ -133,6 +133,7 @@ Before Production, confirm Plaid Dashboard Production access for Canada, allowed
 - Plaid outflows are normalized to positive `expense` rows. Plaid inflows are normalized to positive `income` rows. Manual category edits set `category_source = manual` and are not overwritten by future syncs.
 - Plaid access tokens are stored in `private.plaid_credentials`; normal frontend clients only read safe metadata from `public.plaid_items`.
 - Recurring bill definitions live in `bills`; payment history lives in `bill_payments`.
+- Recurring calendar-capable records stay in their source tables (`calendar_events`, `bills`, `tasks`, and `chores`); visible occurrences are generated in the application layer for bounded date ranges.
 - Chore definitions keep `next_due_date` for fast dashboard queries; completion events live in `chore_completions`.
 - Goal progress updates are deltas in `goal_updates.delta`; `goals.current_value` is maintained by database triggers from `initial_value + sum(delta)`.
 
@@ -182,4 +183,3 @@ types/                Domain model types
 - No multi-user household sharing.
 - No pantry, warranty, advanced health, investment market, or AI features.
 - Bill payment history is recorded, but marking a bill paid does not automatically create a financial transaction in V1.
-- Recurring tasks are not auto-expanded into future task instances yet.

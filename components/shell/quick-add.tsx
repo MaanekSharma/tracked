@@ -6,6 +6,7 @@ import { CalendarPlus, CheckSquare, CreditCard, Goal, Home, Plus, ReceiptText } 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { CheckboxField, FormGrid, HiddenRedirect, SelectField, TextField, TextareaField } from "@/components/ui/form";
+import { CalendarRecurrenceFields } from "@/features/calendar/calendar-form-fields";
 import {
   createBillAction,
   createCalendarEventAction,
@@ -14,7 +15,7 @@ import {
   createTaskAction,
   createTransactionAction,
 } from "@/features/actions";
-import { accountTypeLabels, recurrenceLabels, type Account, type BudgetCategory } from "@/types/domain";
+import { accountTypeLabels, type Account, type BudgetCategory } from "@/types/domain";
 import { monthStartISO, todayISO } from "@/lib/utils";
 
 const transactionTypeOptions = [
@@ -23,7 +24,6 @@ const transactionTypeOptions = [
   { value: "transfer", label: "Transfer" },
 ];
 
-const recurrenceOptions = Object.entries(recurrenceLabels).map(([value, label]) => ({ value, label }));
 const priorityOptions = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
@@ -119,7 +119,7 @@ export function QuickAdd({ accounts, categories }: { accounts: Account[]; catego
               <SelectField label="Priority" name="priority" defaultValue="medium" options={priorityOptions} />
               <TextField label="Due date" name="due_date" type="date" />
               <TextField label="Due time" name="due_time" type="time" />
-              <SelectField label="Recurrence" name="recurrence" defaultValue="none" options={recurrenceOptions} />
+              <CalendarRecurrenceFields />
               <input type="hidden" name="status" value="open" />
             </FormGrid>
             <TextareaField label="Description" name="description" />
@@ -136,7 +136,7 @@ export function QuickAdd({ accounts, categories }: { accounts: Account[]; catego
               <TextField label="Next due date" name="next_due_date" type="date" defaultValue={todayISO()} required />
               <SelectField label="Category" name="category_id" options={categoryOptions} />
               <SelectField label="Pay from" name="account_id" options={accountOptions} />
-              <SelectField label="Recurrence" name="recurrence" defaultValue="monthly" options={recurrenceOptions} />
+              <CalendarRecurrenceFields recurrence="monthly" />
             </FormGrid>
             <div className="grid gap-2 sm:grid-cols-3">
               <CheckboxField label="Recurring" name="recurring" defaultChecked />
@@ -174,6 +174,7 @@ export function QuickAdd({ accounts, categories }: { accounts: Account[]; catego
               <TextField label="End" name="end_at" type="datetime-local" />
               <TextField label="Location" name="location" />
               <TextField label="Category" name="category" />
+              <CalendarRecurrenceFields />
             </FormGrid>
             <CheckboxField label="All day" name="all_day" />
             <TextareaField label="Description" name="description" />
@@ -187,7 +188,7 @@ export function QuickAdd({ accounts, categories }: { accounts: Account[]; catego
             <FormGrid>
               <TextField label="Title" name="title" required />
               <TextField label="Room / Category" name="room" />
-              <SelectField label="Frequency" name="frequency" defaultValue="weekly" options={recurrenceOptions} />
+              <CalendarRecurrenceFields name="frequency" label="Frequency" recurrence="weekly" />
               <TextField label="Next due" name="next_due_date" type="date" defaultValue={todayISO()} />
               <input type="hidden" name="status" value="active" />
             </FormGrid>

@@ -4,6 +4,7 @@ import { format, parseISO } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { calendarDateKey, dateTimeLocalToIso, DEFAULT_CALENDAR_TIME_ZONE, normalizeRecurrenceAlias } from "@/lib/calendar-recurrence";
 import { getNextRecurrenceDate } from "@/lib/calculations";
 import { env } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
@@ -22,7 +23,12 @@ const accountTypes = [
 ] as const satisfies readonly AccountType[];
 
 const transactionTypes = ["income", "expense", "transfer"] as const;
-const recurrences = ["none", "weekly", "biweekly", "monthly", "quarterly", "yearly"] as const satisfies readonly Recurrence[];
+const recurrences = ["none", "daily", "weekly", "biweekly", "monthly", "quarterly", "yearly"] as const satisfies readonly Recurrence[];
+const recurrenceInputs = [
+  ...recurrences,
+  "every_2_weeks",
+  "annually",
+] as const;
 const billingFrequencies = ["weekly", "biweekly", "monthly", "quarterly", "yearly"] as const satisfies readonly BillingFrequency[];
 const priorities = ["low", "medium", "high", "urgent"] as const satisfies readonly Priority[];
 const taskStatuses = ["open", "completed", "archived"] as const satisfies readonly TaskStatus[];
@@ -43,6 +49,26 @@ const optionalNumber = z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? null : value),
   z.coerce.number().nullable(),
 );
+const recurrenceCount = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z.coerce.number().int().min(1).nullable(),
+);
+const recurrenceMetadataSchema = {
+  recurrence_interval: z.coerce.number().int().min(1),
+  recurrence_days_of_week: z
+    .array(z.coerce.number().int().min(0).max(6))
+    .transform((values) => [...new Set(values)].sort((a, b) => a - b)),
+  recurrence_end_date: optionalDate,
+  recurrence_count: recurrenceCount,
+};
+const recurrenceSchema = z.object({
+  recurrence: z.enum(recurrenceInputs),
+  ...recurrenceMetadataSchema,
+});
+const frequencySchema = z.object({
+  frequency: z.enum(recurrenceInputs),
+  ...recurrenceMetadataSchema,
+});
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -51,8 +77,54 @@ function text(formData: FormData, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function requiredFormText(formData: FormData, key: string) {
+  const value = text(formData, key).trim();
+  if (!value) throw new Error(`Missing required form field: ${key}.`);
+  return value;
+}
+
+function texts(formData: FormData, key: string) {
+  return formData.getAll(key).filter((value): value is string => typeof value === "string");
+}
+
 function checked(formData: FormData, key: string) {
   return formData.get(key) === "on" || formData.get(key) === "true";
+}
+
+function recurrenceFormFields(formData: FormData, recurrenceKey: "recurrence" | "frequency" = "recurrence") {
+  return {
+    [recurrenceKey]: requiredFormText(formData, recurrenceKey),
+    recurrence_interval: requiredFormText(formData, "recurrence_interval"),
+    recurrence_days_of_week: texts(formData, "recurrence_days_of_week"),
+    recurrence_end_date: text(formData, "recurrence_end_date"),
+    recurrence_count: text(formData, "recurrence_count"),
+  };
+}
+
+function normalizeRecurrenceFields(
+  input: z.infer<typeof recurrenceSchema>,
+  startsOn: string | null | undefined,
+  label: string,
+) {
+  if (input.recurrence !== "none" && !startsOn) {
+    throw new Error(`Recurring ${label}s require a calendar date.`);
+  }
+
+  if (input.recurrence_end_date && startsOn && input.recurrence_end_date < startsOn) {
+    throw new Error(`Recurrence end date must be on or after the ${label} start date.`);
+  }
+
+  const normalized = normalizeRecurrenceAlias(input.recurrence, input.recurrence_interval);
+  const recurring = normalized.recurrence !== "none";
+  const weekly = normalized.recurrence === "weekly";
+
+  return {
+    recurrence: normalized.recurrence,
+    recurrence_interval: recurring ? normalized.recurrenceInterval : 1,
+    recurrence_days_of_week: recurring && weekly && input.recurrence_days_of_week.length ? input.recurrence_days_of_week : null,
+    recurrence_end_date: recurring ? input.recurrence_end_date : null,
+    recurrence_count: recurring ? input.recurrence_count : null,
+  };
 }
 
 function destination(formData: FormData, fallback: string) {
@@ -88,6 +160,11 @@ async function requireMutationUser() {
 
 async function assertNoError<T extends { error: { message: string } | null }>(result: T) {
   if (result.error) throw new Error(result.error.message);
+}
+
+async function getUserTimeZone(supabase: Supabase, userId: string) {
+  const { data } = await supabase.from("profiles").select("timezone").eq("id", userId).maybeSingle();
+  return data?.timezone ?? DEFAULT_CALENDAR_TIME_ZONE;
 }
 
 async function mutate(
@@ -393,29 +470,50 @@ const billSchema = z.object({
   amount: z.coerce.number().nonnegative(),
   next_due_date: requiredText,
   recurring: z.boolean(),
-  recurrence: z.enum(recurrences),
   autopay: z.boolean(),
   active: z.boolean(),
   notes: optionalText,
-}).transform((value) => ({
-  ...value,
-  recurrence: value.recurring ? (value.recurrence === "none" ? "monthly" : value.recurrence) : "none",
-}));
+}).merge(recurrenceSchema);
+
+function normalizeBillInput(input: z.infer<typeof billSchema>) {
+  if (!input.recurring) {
+    return {
+      ...input,
+      recurring: false,
+      recurrence: "none" as const,
+      recurrence_interval: 1,
+      recurrence_days_of_week: null,
+      recurrence_end_date: null,
+      recurrence_count: null,
+    };
+  }
+
+  const recurrence = normalizeRecurrenceFields(input, input.next_due_date, "bill");
+  if (recurrence.recurrence === "none") {
+    throw new Error("Recurring bills require a recurrence other than one-time.");
+  }
+
+  return {
+    ...input,
+    recurring: true,
+    ...recurrence,
+  };
+}
 
 export async function createBillAction(formData: FormData) {
   await mutate(formData, "/money", async (supabase, userId) => {
-    const input = billSchema.parse({
+    const input = normalizeBillInput(billSchema.parse({
       name: text(formData, "name"),
       category_id: text(formData, "category_id"),
       account_id: text(formData, "account_id"),
       amount: text(formData, "amount"),
       next_due_date: text(formData, "next_due_date"),
       recurring: checked(formData, "recurring"),
-      recurrence: text(formData, "recurrence") || "none",
       autopay: checked(formData, "autopay"),
       active: !checked(formData, "inactive"),
       notes: text(formData, "notes"),
-    });
+      ...recurrenceFormFields(formData),
+    }));
     await assertNoError(await supabase.from("bills").insert({ ...input, user_id: userId }));
   });
 }
@@ -426,18 +524,18 @@ export async function updateBillAction(formData: FormData) {
     "/money",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
-      const input = billSchema.parse({
+      const input = normalizeBillInput(billSchema.parse({
         name: text(formData, "name"),
         category_id: text(formData, "category_id"),
         account_id: text(formData, "account_id"),
         amount: text(formData, "amount"),
         next_due_date: text(formData, "next_due_date"),
         recurring: checked(formData, "recurring"),
-        recurrence: text(formData, "recurrence") || "none",
         autopay: checked(formData, "autopay"),
         active: !checked(formData, "inactive"),
         notes: text(formData, "notes"),
-      });
+        ...recurrenceFormFields(formData),
+      }));
       await assertNoError(await supabase.from("bills").update(input).eq("id", id).eq("user_id", userId));
     },
     "updated",
@@ -452,7 +550,7 @@ export async function markBillPaidAction(formData: FormData) {
       const id = idSchema.parse(text(formData, "id"));
       const { data: bill, error } = await supabase
         .from("bills")
-        .select("id, user_id, amount, next_due_date, recurring, recurrence, account_id")
+        .select("id, user_id, amount, next_due_date, recurring, recurrence, recurrence_interval, recurrence_end_date, recurrence_count, account_id")
         .eq("id", id)
         .eq("user_id", userId)
         .single();
@@ -473,13 +571,22 @@ export async function markBillPaidAction(formData: FormData) {
         ),
       );
 
-      const next = bill.recurring ? getNextRecurrenceDate(parseISO(bill.next_due_date), bill.recurrence) : null;
+      const { count: paidCount } = await supabase
+        .from("bill_payments")
+        .select("id", { count: "exact", head: true })
+        .eq("bill_id", id)
+        .eq("user_id", userId);
+      const next = bill.recurring ? getNextRecurrenceDate(parseISO(bill.next_due_date), bill.recurrence, bill.recurrence_interval) : null;
+      const nextDate = next ? format(next, "yyyy-MM-dd") : null;
+      const reachedCount = bill.recurrence_count !== null && (paidCount ?? 0) >= bill.recurrence_count;
+      const beyondEnd = nextDate !== null && bill.recurrence_end_date !== null && nextDate > bill.recurrence_end_date;
+      const active = Boolean(nextDate && !reachedCount && !beyondEnd);
       await assertNoError(
         await supabase
           .from("bills")
           .update({
-            next_due_date: next ? format(next, "yyyy-MM-dd") : bill.next_due_date,
-            active: Boolean(next),
+            next_due_date: active && nextDate ? nextDate : bill.next_due_date,
+            active,
           })
           .eq("id", id)
           .eq("user_id", userId),
@@ -566,20 +673,26 @@ const taskSchema = z.object({
   priority: z.enum(priorities),
   due_date: optionalDate,
   due_time: optionalText,
-  recurrence: z.enum(recurrences),
-});
+}).merge(recurrenceSchema);
+
+function normalizeTaskInput(input: z.infer<typeof taskSchema>) {
+  return {
+    ...input,
+    ...normalizeRecurrenceFields(input, input.due_date, "task"),
+  };
+}
 
 export async function createTaskAction(formData: FormData) {
   await mutate(formData, "/tasks", async (supabase, userId) => {
-    const input = taskSchema.parse({
+    const input = normalizeTaskInput(taskSchema.parse({
       title: text(formData, "title"),
       description: text(formData, "description"),
       status: text(formData, "status") || "open",
       priority: text(formData, "priority") || "medium",
       due_date: text(formData, "due_date"),
       due_time: text(formData, "due_time"),
-      recurrence: text(formData, "recurrence") || "none",
-    });
+      ...recurrenceFormFields(formData),
+    }));
     await assertNoError(
       await supabase.from("tasks").insert({
         ...input,
@@ -596,15 +709,15 @@ export async function updateTaskAction(formData: FormData) {
     "/tasks",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
-      const input = taskSchema.parse({
+      const input = normalizeTaskInput(taskSchema.parse({
         title: text(formData, "title"),
         description: text(formData, "description"),
         status: text(formData, "status") || "open",
         priority: text(formData, "priority") || "medium",
         due_date: text(formData, "due_date"),
         due_time: text(formData, "due_time"),
-        recurrence: text(formData, "recurrence") || "none",
-      });
+        ...recurrenceFormFields(formData),
+      }));
       await assertNoError(
         await supabase
           .from("tasks")
@@ -753,11 +866,31 @@ const eventSchema = z.object({
   all_day: z.boolean(),
   location: optionalText,
   category: optionalText,
-});
+}).merge(recurrenceSchema);
+
+function normalizeCalendarEventInput(input: z.infer<typeof eventSchema>, timeZone: string) {
+  const start_at = dateTimeLocalToIso(input.start_at, timeZone);
+  const end_at = input.end_at ? dateTimeLocalToIso(input.end_at, timeZone) : null;
+
+  if (end_at && new Date(end_at) < new Date(start_at)) {
+    throw new Error("Event end must be after the start.");
+  }
+
+  const startsOn = calendarDateKey(start_at, timeZone);
+  const recurrence = normalizeRecurrenceFields(input, startsOn, "event");
+
+  return {
+    ...input,
+    start_at,
+    end_at,
+    ...recurrence,
+  };
+}
 
 export async function createCalendarEventAction(formData: FormData) {
   await mutate(formData, "/calendar", async (supabase, userId) => {
-    const input = eventSchema.parse({
+    const timeZone = await getUserTimeZone(supabase, userId);
+    const input = normalizeCalendarEventInput(eventSchema.parse({
       title: text(formData, "title"),
       description: text(formData, "description"),
       start_at: text(formData, "start_at"),
@@ -765,7 +898,8 @@ export async function createCalendarEventAction(formData: FormData) {
       all_day: checked(formData, "all_day"),
       location: text(formData, "location"),
       category: text(formData, "category"),
-    });
+      ...recurrenceFormFields(formData),
+    }), timeZone);
     await assertNoError(await supabase.from("calendar_events").insert({ ...input, user_id: userId }));
   });
 }
@@ -776,7 +910,8 @@ export async function updateCalendarEventAction(formData: FormData) {
     "/calendar",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
-      const input = eventSchema.parse({
+      const timeZone = await getUserTimeZone(supabase, userId);
+      const input = normalizeCalendarEventInput(eventSchema.parse({
         title: text(formData, "title"),
         description: text(formData, "description"),
         start_at: text(formData, "start_at"),
@@ -784,7 +919,8 @@ export async function updateCalendarEventAction(formData: FormData) {
         all_day: checked(formData, "all_day"),
         location: text(formData, "location"),
         category: text(formData, "category"),
-      });
+        ...recurrenceFormFields(formData),
+      }), timeZone);
       await assertNoError(await supabase.from("calendar_events").update(input).eq("id", id).eq("user_id", userId));
     },
     "updated",
@@ -806,24 +942,35 @@ export async function deleteCalendarEventAction(formData: FormData) {
 const choreSchema = z.object({
   title: requiredText,
   description: optionalText,
-  frequency: z.enum(recurrences),
   next_due_date: optionalDate,
   last_completed_date: optionalDate,
   status: z.enum(choreStatuses),
   room: optionalText,
-});
+}).merge(frequencySchema);
+
+function normalizeChoreInput(input: z.infer<typeof choreSchema>) {
+  const recurrence = normalizeRecurrenceFields({ ...input, recurrence: input.frequency }, input.next_due_date, "chore");
+  return {
+    ...input,
+    frequency: recurrence.recurrence,
+    recurrence_interval: recurrence.recurrence_interval,
+    recurrence_days_of_week: recurrence.recurrence_days_of_week,
+    recurrence_end_date: recurrence.recurrence_end_date,
+    recurrence_count: recurrence.recurrence_count,
+  };
+}
 
 export async function createChoreAction(formData: FormData) {
   await mutate(formData, "/home", async (supabase, userId) => {
-    const input = choreSchema.parse({
+    const input = normalizeChoreInput(choreSchema.parse({
       title: text(formData, "title"),
       description: text(formData, "description"),
-      frequency: text(formData, "frequency") || "weekly",
       next_due_date: text(formData, "next_due_date"),
       last_completed_date: text(formData, "last_completed_date"),
       status: text(formData, "status") || "active",
       room: text(formData, "room"),
-    });
+      ...recurrenceFormFields(formData, "frequency"),
+    }));
     await assertNoError(await supabase.from("chores").insert({ ...input, user_id: userId }));
   });
 }
@@ -834,15 +981,15 @@ export async function updateChoreAction(formData: FormData) {
     "/home",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
-      const input = choreSchema.parse({
+      const input = normalizeChoreInput(choreSchema.parse({
         title: text(formData, "title"),
         description: text(formData, "description"),
-        frequency: text(formData, "frequency") || "weekly",
         next_due_date: text(formData, "next_due_date"),
         last_completed_date: text(formData, "last_completed_date"),
         status: text(formData, "status") || "active",
         room: text(formData, "room"),
-      });
+        ...recurrenceFormFields(formData, "frequency"),
+      }));
       await assertNoError(await supabase.from("chores").update(input).eq("id", id).eq("user_id", userId));
     },
     "updated",
@@ -855,9 +1002,16 @@ export async function completeChoreAction(formData: FormData) {
     "/home",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
-      const frequency = z.enum(recurrences).parse(text(formData, "frequency") || "none");
+      const { data: chore, error } = await supabase
+        .from("chores")
+        .select("id, frequency, recurrence_interval, recurrence_end_date, recurrence_count")
+        .eq("id", id)
+        .eq("user_id", userId)
+        .single();
+
+      if (error || !chore) throw new Error(error?.message ?? "Chore not found.");
+
       const completed = new Date();
-      const next = getNextRecurrenceDate(completed, frequency);
       await assertNoError(
         await supabase.from("chore_completions").insert({
           user_id: userId,
@@ -865,13 +1019,23 @@ export async function completeChoreAction(formData: FormData) {
           completed_on: format(completed, "yyyy-MM-dd"),
         }),
       );
+      const { count: completionCount } = await supabase
+        .from("chore_completions")
+        .select("id", { count: "exact", head: true })
+        .eq("chore_id", id)
+        .eq("user_id", userId);
+      const next = getNextRecurrenceDate(completed, chore.frequency, chore.recurrence_interval);
+      const nextDate = next ? format(next, "yyyy-MM-dd") : null;
+      const reachedCount = chore.recurrence_count !== null && (completionCount ?? 0) >= chore.recurrence_count;
+      const beyondEnd = nextDate !== null && chore.recurrence_end_date !== null && nextDate > chore.recurrence_end_date;
+      const active = Boolean(nextDate && !reachedCount && !beyondEnd);
       await assertNoError(
         await supabase
           .from("chores")
           .update({
             last_completed_date: format(completed, "yyyy-MM-dd"),
-            next_due_date: next ? format(next, "yyyy-MM-dd") : null,
-            status: next ? "active" : "completed",
+            next_due_date: active && nextDate ? nextDate : null,
+            status: active ? "active" : "completed",
           })
           .eq("id", id)
           .eq("user_id", userId),

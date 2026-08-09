@@ -1,15 +1,13 @@
 import { addDays, addMonths, addWeeks, addYears, compareAsc, isBefore, parseISO } from "date-fns";
+import { calendarItemDateKey, normalizeRecurrenceAlias } from "@/lib/calendar-recurrence";
 import type {
   Account,
-  Bill,
   BillingFrequency,
   Budget,
-  Chore,
-  CalendarEvent,
+  CalendarItem,
   Goal,
   Recurrence,
   Subscription,
-  Task,
   Transaction,
   UpcomingItem,
 } from "@/types/domain";
@@ -81,64 +79,50 @@ export function normalizeSubscriptionCost(subscription: Pick<Subscription, "amou
   };
 }
 
-export function getNextRecurrenceDate(fromDate: Date, recurrence: Recurrence) {
-  switch (recurrence) {
+export function getNextRecurrenceDate(fromDate: Date, recurrence: Recurrence, interval = 1) {
+  const rule = normalizeRecurrenceAlias(recurrence, interval);
+
+  switch (rule.recurrence) {
+    case "daily":
+      return addDays(fromDate, rule.recurrenceInterval);
     case "weekly":
-      return addWeeks(fromDate, 1);
-    case "biweekly":
-      return addWeeks(fromDate, 2);
+      return addWeeks(fromDate, rule.recurrenceInterval);
     case "monthly":
-      return addMonths(fromDate, 1);
+      return addMonths(fromDate, rule.recurrenceInterval);
     case "quarterly":
-      return addMonths(fromDate, 3);
+      return addMonths(fromDate, rule.recurrenceInterval * 3);
     case "yearly":
-      return addYears(fromDate, 1);
+      return addYears(fromDate, rule.recurrenceInterval);
     default:
       return null;
   }
 }
 
-export function buildUpcomingItems({
-  bills,
-  events,
-  chores,
-  tasks,
-}: {
-  bills: Bill[];
-  events: CalendarEvent[];
-  chores: Chore[];
-  tasks: Task[];
-}) {
-  const items: UpcomingItem[] = [
-    ...bills
-      .filter((bill) => bill.active)
-      .map((bill) => ({ id: bill.id, title: bill.name, date: bill.next_due_date, type: "bill" as const, detail: "Bill due" })),
-    ...events.map((event) => ({
-      id: event.id,
-      title: event.title,
-      date: event.start_at.slice(0, 10),
-      type: "event" as const,
-      detail: event.location ?? "Calendar event",
-    })),
-    ...chores
-      .filter((chore) => chore.status === "active" && chore.next_due_date)
-      .map((chore) => ({
-        id: chore.id,
-        title: chore.title,
-        date: chore.next_due_date ?? "",
-        type: "chore" as const,
-        detail: chore.room ?? "Chore due",
-      })),
-    ...tasks
-      .filter((task) => task.status === "open" && task.due_date)
-      .map((task) => ({
-        id: task.id,
-        title: task.title,
-        date: task.due_date ?? "",
-        type: "task" as const,
-        detail: `${task.priority} priority`,
-      })),
-  ];
+function defaultCalendarItemDetail(item: CalendarItem) {
+  if (item.detail) return item.detail;
+
+  switch (item.sourceType) {
+    case "bill":
+      return "Bill due";
+    case "event":
+      return "Calendar event";
+    case "chore":
+      return "Chore due";
+    case "task":
+      return "Task due";
+  }
+}
+
+export function buildUpcomingItems(calendarItems: CalendarItem[]) {
+  const items: UpcomingItem[] = calendarItems.map((item) => ({
+    id: item.id,
+    sourceId: item.sourceId,
+    sourceType: item.sourceType,
+    title: item.title,
+    date: calendarItemDateKey(item),
+    type: item.sourceType,
+    detail: defaultCalendarItemDetail(item),
+  }));
 
   return items.sort((a, b) => compareAsc(parseISO(a.date), parseISO(b.date)));
 }
