@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5f2ec;
+  --foreground: #191714;
+  --card: #fffaf0;
+  --card-foreground: #191714;
+  --popover: #fffaf0;
+  --popover-foreground: #191714;
+  --primary: #116b5d;
+  --primary-foreground: #f9faf7;
+  --secondary: #e6ddd0;
+  --secondary-foreground: #28231e;
+  --muted: #e8e0d5;
+  --muted-foreground: #6b6257;
+  --accent: #d7e9d5;
+  --accent-foreground: #173f35;
+  --destructive: #b42318;
+  --destructive-foreground: #fff7ed;
+  --border: #d8ccba;
+  --input: #d8ccba;
+  --ring: #14806f;
+  --chart-1: #14806f;
+  --chart-2: #b66a2c;
+  --chart-3: #5067a8;
+  --chart-4: #a53f55;
+  --chart-5: #6f6a39;
+  --radius: 0.5rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+.dark {
+  --background: #10120f;
+  --foreground: #f5f1e9;
+  --card: #171a16;
+  --card-foreground: #f5f1e9;
+  --popover: #171a16;
+  --popover-foreground: #f5f1e9;
+  --primary: #5fc5ad;
+  --primary-foreground: #081411;
+  --secondary: #242820;
+  --secondary-foreground: #f0eadf;
+  --muted: #20241d;
+  --muted-foreground: #aaa293;
+  --accent: #21392f;
+  --accent-foreground: #dff6ec;
+  --destructive: #f97066;
+  --destructive-foreground: #210705;
+  --border: #2f352b;
+  --input: #384033;
+  --ring: #5fc5ad;
+  --chart-1: #5fc5ad;
+  --chart-2: #e0a05f;
+  --chart-3: #8fa8ff;
+  --chart-4: #ee7d94;
+  --chart-5: #c4c06d;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  outline-color: var(--ring);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--primary) 28%, transparent);
+}
+
+.dashboard-grid {
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--border) 35%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--border) 35%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black 0%, transparent 82%);
+}

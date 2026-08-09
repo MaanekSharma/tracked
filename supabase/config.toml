@@ -1,0 +1,4 @@
+project_id = "tracked"
+
+[functions.plaid-webhook]
+verify_jwt = false
