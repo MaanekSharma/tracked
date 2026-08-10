@@ -3,7 +3,7 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { HttpError } from "./http.ts";
 import { getPlaidAccessToken } from "./plaid-credentials.ts";
 import { createPlaidClient, plaidError, safePlaidMessage } from "./plaid.ts";
-import { categorizePlaidTransaction, type BudgetCategoryRow, type PlaidCategoryRuleRow } from "./plaid-categories.ts";
+import { categorizePlaidTransaction, categoryForPlaidSync, type BudgetCategoryRow, type PlaidCategoryRuleRow } from "./plaid-categories.ts";
 
 type PlaidItemRow = {
   id: string;
@@ -185,8 +185,8 @@ async function upsertTransaction(
   }
 
   const existing = await existingTransaction(admin, userId, transaction.transaction_id);
-  const preserveManualCategory = existing?.category_source === "manual";
   const categorization = categorizePlaidTransaction(transaction, categories, rules);
+  const syncCategory = categoryForPlaidSync(existing, categorization);
   const transactionDate =
     transaction.authorized_date && transaction.authorized_date <= transaction.date
       ? transaction.authorized_date
@@ -227,8 +227,8 @@ async function upsertTransaction(
     plaid_category_primary: plaidPrimary,
     plaid_category_detailed: plaidDetailed,
     removed_at: null,
-    category_id: preserveManualCategory ? existing.category_id : categorization.category_id,
-    category_source: preserveManualCategory ? "manual" : categorization.category_source,
+    category_id: syncCategory.category_id,
+    category_source: syncCategory.category_source,
   };
 
   if (existing) {

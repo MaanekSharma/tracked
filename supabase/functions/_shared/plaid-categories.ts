@@ -14,12 +14,17 @@ export type PlaidCategoryRuleRow = {
   active: boolean;
 };
 
-type CategorySource = "plaid" | "rule";
+type CategorySource = "plaid" | "rule" | "manual";
 
 type Categorization = {
   category_id: string | null;
   category_source: CategorySource | null;
 };
+
+export type ExistingTransactionCategory = {
+  category_id: string | null;
+  category_source: string | null;
+} | null;
 
 const merchantOverrides = [
   { match: "uber eats", category: "Dining Out" },
@@ -145,4 +150,18 @@ export function categorizePlaidTransaction(
     category_id: categoryId,
     category_source: categoryId ? "plaid" : null,
   };
+}
+
+export function categoryForPlaidSync(
+  existing: ExistingTransactionCategory,
+  categorization: Categorization,
+): Categorization {
+  if (existing?.category_source === "manual") {
+    return {
+      category_id: existing.category_id,
+      category_source: "manual",
+    };
+  }
+
+  return categorization;
 }

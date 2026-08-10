@@ -1,4 +1,5 @@
 import type { User } from "@supabase/supabase-js";
+import { DEFAULT_CALENDAR_TIME_ZONE } from "@/lib/calendar-recurrence";
 import { createClient } from "@/lib/supabase/server";
 
 export async function ensureUserBootstrap(user: User) {
@@ -10,7 +11,7 @@ export async function ensureUserBootstrap(user: User) {
       id: user.id,
       display_name: user.user_metadata?.display_name ?? user.email?.split("@")[0] ?? null,
       preferred_currency: "CAD",
-      timezone: "America/Toronto",
+      timezone: DEFAULT_CALENDAR_TIME_ZONE,
       theme: "dark",
     });
   }

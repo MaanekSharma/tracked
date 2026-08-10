@@ -7,6 +7,7 @@ import { z } from "zod";
 import { calendarDateKey, dateTimeLocalToIso, DEFAULT_CALENDAR_TIME_ZONE, normalizeRecurrenceAlias } from "@/lib/calendar-recurrence";
 import { getNextRecurrenceDate } from "@/lib/calculations";
 import { env } from "@/lib/env";
+import { hasFutureRecurrence } from "@/lib/recurrence-progress";
 import { createClient } from "@/lib/supabase/server";
 import type { AccountType, BillingFrequency, Priority, Recurrence, TaskStatus } from "@/types/domain";
 
@@ -578,9 +579,12 @@ export async function markBillPaidAction(formData: FormData) {
         .eq("user_id", userId);
       const next = bill.recurring ? getNextRecurrenceDate(parseISO(bill.next_due_date), bill.recurrence, bill.recurrence_interval) : null;
       const nextDate = next ? format(next, "yyyy-MM-dd") : null;
-      const reachedCount = bill.recurrence_count !== null && (paidCount ?? 0) >= bill.recurrence_count;
-      const beyondEnd = nextDate !== null && bill.recurrence_end_date !== null && nextDate > bill.recurrence_end_date;
-      const active = Boolean(nextDate && !reachedCount && !beyondEnd);
+      const active = hasFutureRecurrence({
+        nextDate,
+        completedCount: paidCount ?? 0,
+        recurrenceCount: bill.recurrence_count,
+        recurrenceEndDate: bill.recurrence_end_date,
+      });
       await assertNoError(
         await supabase
           .from("bills")
@@ -1026,9 +1030,12 @@ export async function completeChoreAction(formData: FormData) {
         .eq("user_id", userId);
       const next = getNextRecurrenceDate(completed, chore.frequency, chore.recurrence_interval);
       const nextDate = next ? format(next, "yyyy-MM-dd") : null;
-      const reachedCount = chore.recurrence_count !== null && (completionCount ?? 0) >= chore.recurrence_count;
-      const beyondEnd = nextDate !== null && chore.recurrence_end_date !== null && nextDate > chore.recurrence_end_date;
-      const active = Boolean(nextDate && !reachedCount && !beyondEnd);
+      const active = hasFutureRecurrence({
+        nextDate,
+        completedCount: completionCount ?? 0,
+        recurrenceCount: chore.recurrence_count,
+        recurrenceEndDate: chore.recurrence_end_date,
+      });
       await assertNoError(
         await supabase
           .from("chores")
@@ -1073,7 +1080,7 @@ export async function updateProfileAction(formData: FormData) {
         .parse({
           display_name: text(formData, "display_name"),
           preferred_currency: text(formData, "preferred_currency") || "CAD",
-          timezone: text(formData, "timezone") || "America/Toronto",
+          timezone: text(formData, "timezone") || DEFAULT_CALENDAR_TIME_ZONE,
           theme: text(formData, "theme") || "dark",
           savings_rate_target: text(formData, "savings_rate_target"),
         });
@@ -1093,7 +1100,7 @@ export async function ensureProfileAction() {
       id: user.id,
       display_name: user.user_metadata?.display_name ?? null,
       preferred_currency: "CAD",
-      timezone: "America/Toronto",
+      timezone: DEFAULT_CALENDAR_TIME_ZONE,
       theme: "dark",
     }),
   );

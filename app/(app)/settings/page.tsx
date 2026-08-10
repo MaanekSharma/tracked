@@ -1,5 +1,6 @@
 import { seedDefaultCategoriesAction, updateProfileAction } from "@/features/actions";
 import { ThemeSwitcher } from "@/features/settings/theme-switcher";
+import { DEFAULT_CALENDAR_TIME_ZONE } from "@/lib/calendar-recurrence";
 import { getBudgetCategories, getProfileData } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +29,7 @@ export default async function SettingsPage({
       <PageNotice notice={params.notice} error={params.error} />
       <section className="grid gap-4 md:grid-cols-3">
         <StatCard label="Currency" value={profile?.preferred_currency ?? "CAD"} detail="V1 supports Canadian dollars" />
-        <StatCard label="Timezone" value={profile?.timezone ?? "America/Toronto"} detail="Initial display assumption" />
+        <StatCard label="Timezone" value={profile?.timezone ?? DEFAULT_CALENDAR_TIME_ZONE} detail="Initial display assumption" />
         <StatCard label="Categories" value={String(categories.length)} detail="Budget configuration" />
       </section>
 
@@ -44,7 +45,7 @@ export default async function SettingsPage({
               <div className="grid gap-4 sm:grid-cols-2">
                 <TextField label="Display name" name="display_name" defaultValue={profile?.display_name} />
                 <SelectField label="Preferred currency" name="preferred_currency" defaultValue="CAD" options={[{ value: "CAD", label: "CAD" }]} />
-                <TextField label="Timezone" name="timezone" defaultValue={profile?.timezone ?? "America/Toronto"} required />
+                <TextField label="Timezone" name="timezone" defaultValue={profile?.timezone ?? DEFAULT_CALENDAR_TIME_ZONE} required />
                 <SelectField label="Saved theme preference" name="theme" defaultValue={profile?.theme ?? "dark"} options={themeOptions} />
                 <TextField
                   label="Savings rate target"

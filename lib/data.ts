@@ -2,6 +2,7 @@ import { endOfMonth, format, startOfMonth } from "date-fns";
 import {
   addDaysToDateKey,
   calendarDateKey,
+  calendarItemDateKey,
   dateTimeLocalToIso,
   DEFAULT_CALENDAR_TIME_ZONE,
   expandRecurringItems,
@@ -36,6 +37,18 @@ export type MoneyFilters = {
 export type CalendarItemOptions = {
   timeZone?: string;
   activeChoresOnly?: boolean;
+};
+
+export type CalendarRange = {
+  from: string;
+  to: string;
+};
+
+export type CalendarSources = {
+  events: CalendarEvent[];
+  bills: Bill[];
+  tasks: Task[];
+  chores: Chore[];
 };
 
 export async function getUserScopedClient() {
@@ -312,16 +325,26 @@ export function normalizeCalendarItems(
   ];
 }
 
-export async function getCalendarItems(range: { from: string; to: string }, options: CalendarItemOptions = {}) {
+export function buildCalendarItemsFromSources(sources: CalendarSources, range: CalendarRange, options: CalendarItemOptions = {}) {
   const timeZone = options.timeZone ?? DEFAULT_CALENDAR_TIME_ZONE;
+  const chores = options.activeChoresOnly ? sources.chores.filter((chore) => chore.status === "active") : sources.chores;
+
+  return expandRecurringItems(
+    normalizeCalendarItems({ events: sources.events, bills: sources.bills, tasks: sources.tasks, chores }, timeZone),
+    range.from,
+    range.to,
+    timeZone,
+  );
+}
+
+export async function getCalendarItems(range: CalendarRange, options: CalendarItemOptions = {}) {
   const [events, tasks, bills, chores] = await Promise.all([
     getCalendarEvents(),
     getTasks("open"),
     getBills(false),
     getChores(),
   ]);
-  const calendarChores = options.activeChoresOnly ? chores.filter((chore) => chore.status === "active") : chores;
-  return expandRecurringItems(normalizeCalendarItems({ events, bills, tasks, chores: calendarChores }, timeZone), range.from, range.to, timeZone);
+  return buildCalendarItemsFromSources({ events, bills, tasks, chores }, range, options);
 }
 
 export async function getDashboardData() {
@@ -329,7 +352,7 @@ export async function getDashboardData() {
   const timeZone = profile?.timezone ?? DEFAULT_CALENDAR_TIME_ZONE;
   const today = calendarDateKey(new Date(), timeZone);
   const upcomingRange = { from: today, to: addDaysToDateKey(today, 365) };
-  const [accounts, categories, budgets, monthlyTransactions, bills, subscriptions, goals, chores, upcomingCalendarItems, todayCalendarItems] = await Promise.all([
+  const [accounts, categories, budgets, monthlyTransactions, bills, subscriptions, goals, chores, events, openTasks] = await Promise.all([
     getAccounts(),
     getBudgetCategories(),
     getCurrentBudgets(),
@@ -338,9 +361,15 @@ export async function getDashboardData() {
     getSubscriptions(),
     getGoals(),
     getChores(),
-    getCalendarItems(upcomingRange, { timeZone, activeChoresOnly: true }),
-    getCalendarItems({ from: today, to: today }, { timeZone, activeChoresOnly: true }),
+    getCalendarEvents(),
+    getTasks("open"),
   ]);
+  const upcomingCalendarItems = buildCalendarItemsFromSources(
+    { events, bills, tasks: openTasks, chores },
+    upcomingRange,
+    { timeZone, activeChoresOnly: true },
+  );
+  const todayCalendarItems = upcomingCalendarItems.filter((item) => calendarItemDateKey(item, timeZone) === today);
   const tasks = todayCalendarItems.filter((item) => item.sourceType === "task");
 
   const netWorth = calculateNetWorth(accounts);

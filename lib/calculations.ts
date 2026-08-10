@@ -131,8 +131,3 @@ export function isOverdue(date: string | null | undefined, now = new Date()) {
   if (!date) return false;
   return isBefore(parseISO(date), new Date(now.getFullYear(), now.getMonth(), now.getDate()));
 }
-
-export function withinNextDays(date: string, days: number, now = new Date()) {
-  const parsed = parseISO(date);
-  return !isBefore(parsed, new Date(now.getFullYear(), now.getMonth(), now.getDate())) && !isBefore(addDays(now, days), parsed);
-}
