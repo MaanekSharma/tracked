@@ -20,6 +20,8 @@ export type TaskStatus = "open" | "completed" | "archived";
 export type GoalStatus = "active" | "completed" | "archived";
 export type BillingFrequency = "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
 export type PlaidConnectionStatus = "connected" | "disconnected" | "login_required" | "error";
+export type PlaidInvestmentsStatus = "unknown" | "available" | "balance_only" | "unavailable" | "pending" | "error";
+export type AccountInvestmentSyncStatus = "not_applicable" | "pending" | "available" | "balance_only" | "error";
 
 export type Profile = {
   id: string;
@@ -50,11 +52,15 @@ export type Account = {
   mask: string | null;
   account_subtype: string | null;
   institution_name: string | null;
+  institution_id: string | null;
+  plaid_account_type: string | null;
   available_balance: number | string | null;
   currency_code: string;
   is_plaid_connected: boolean;
   plaid_connection_status: "manual" | PlaidConnectionStatus;
   last_synced_at: string | null;
+  investment_sync_status: AccountInvestmentSyncStatus;
+  reconciliation_status: "not_needed" | "needs_review" | "linked";
   created_at: string;
   updated_at: string;
 };
@@ -69,10 +75,80 @@ export type PlaidItem = {
   error_code: string | null;
   error_message: string | null;
   sync_cursor: string | null;
+  available_products: string[];
+  billed_products: string[];
+  consented_products: string[];
+  transactions_status: "unknown" | "available" | "unavailable" | "pending" | "error";
+  investments_status: PlaidInvestmentsStatus;
+  investment_accounts_count: number;
+  investments_last_synced_at: string | null;
+  investment_transactions_start_date: string | null;
   last_synced_at: string | null;
   disconnected_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type InvestmentSecurity = {
+  id: string;
+  user_id: string;
+  plaid_item_uuid: string;
+  plaid_security_id: string;
+  name: string | null;
+  ticker_symbol: string | null;
+  security_type: string | null;
+  security_subtype: string | null;
+  close_price: number | string | null;
+  close_price_as_of: string | null;
+  currency_code: string | null;
+  institution_security_id: string | null;
+  institution_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InvestmentHolding = {
+  id: string;
+  user_id: string;
+  plaid_item_uuid: string;
+  account_id: string;
+  plaid_account_id: string;
+  security_id: string;
+  plaid_security_id: string;
+  quantity: number | string;
+  institution_value: number | string;
+  institution_price: number | string;
+  institution_price_as_of: string | null;
+  cost_basis: number | string | null;
+  currency_code: string | null;
+  created_at: string;
+  updated_at: string;
+  investment_securities?: InvestmentSecurity | null;
+};
+
+export type InvestmentTransaction = {
+  id: string;
+  user_id: string;
+  plaid_item_uuid: string;
+  account_id: string;
+  plaid_account_id: string;
+  security_id: string | null;
+  plaid_security_id: string | null;
+  plaid_investment_transaction_id: string;
+  cancel_transaction_id: string | null;
+  transaction_date: string;
+  transaction_datetime: string | null;
+  name: string;
+  quantity: number | string;
+  amount: number | string;
+  price: number | string;
+  fees: number | string | null;
+  transaction_type: string;
+  transaction_subtype: string;
+  currency_code: string | null;
+  created_at: string;
+  updated_at: string;
+  investment_securities?: InvestmentSecurity | null;
 };
 
 export type BudgetCategory = {
@@ -104,6 +180,8 @@ export type Transaction = {
   destination_account_id: string | null;
   category_id: string | null;
   type: TransactionType;
+  type_override: TransactionType | null;
+  excluded_from_spending: boolean;
   amount: number | string;
   merchant: string | null;
   description: string | null;

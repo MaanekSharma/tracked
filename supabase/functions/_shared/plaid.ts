@@ -10,9 +10,21 @@ import { HttpError } from "./http.ts";
 export { CountryCode, Products };
 
 export type PlaidApiError = {
+  error_type?: string;
   error_code?: string;
   error_message?: string;
   display_message?: string | null;
+  request_id?: string;
+};
+
+export type PlaidErrorDiagnostic = {
+  operation: string;
+  error_type: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  display_message: string | null;
+  request_id: string | null;
+  http_status: number | null;
 };
 
 function requiredSecret(name: string) {
@@ -22,11 +34,11 @@ function requiredSecret(name: string) {
 }
 
 export function plaidEnv() {
-  const env = Deno.env.get("PLAID_ENV") ?? "sandbox";
+  const env = requiredSecret("PLAID_ENV").trim().toLowerCase();
   if (!["sandbox", "development", "production"].includes(env)) {
     throw new HttpError(500, "PLAID_ENV must be sandbox, development, or production.");
   }
-  return env;
+  return env as "sandbox" | "development" | "production";
 }
 
 export function createPlaidClient() {
@@ -48,6 +60,38 @@ export function createPlaidClient() {
 export function plaidError(error: unknown): PlaidApiError | null {
   const response = (error as { response?: { data?: PlaidApiError } }).response;
   return response?.data ?? null;
+}
+
+export function plaidErrorDiagnostic(operation: string, error: unknown): PlaidErrorDiagnostic {
+  const parsed = plaidError(error);
+  const status = (error as { response?: { status?: number } }).response?.status;
+  return {
+    operation,
+    error_type: parsed?.error_type ?? null,
+    error_code: parsed?.error_code ?? null,
+    error_message: parsed?.error_message ?? null,
+    display_message: parsed?.display_message ?? null,
+    request_id: parsed?.request_id ?? null,
+    http_status: status ?? null,
+  };
+}
+
+export function plaidRequestError(operation: string, error: unknown) {
+  const diagnostic = plaidErrorDiagnostic(operation, error);
+  console.error(JSON.stringify({
+    scope: "plaid-api",
+    event: "request_failed",
+    ...diagnostic,
+  }));
+  return new HttpError(502, safePlaidMessage(error), diagnostic);
+}
+
+export async function plaidApiRequest<T>(operation: string, request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    throw plaidRequestError(operation, error);
+  }
 }
 
 export function safePlaidMessage(error: unknown) {

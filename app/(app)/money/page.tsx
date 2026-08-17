@@ -1,10 +1,26 @@
-import { calculateMonthlySpending, calculateNetWorth, calculateSavingsRate, normalizeSubscriptionCost } from "@/lib/calculations";
-import { getAccounts, getBills, getBudgetCategories, getCurrentBudgets, getMonthlyTransactions, getPlaidItems, getSubscriptions, getTransactions } from "@/lib/data";
-import { money, percentage } from "@/lib/utils";
-import { AccountManager, BillsManager, BudgetManager, SubscriptionsManager, TransactionManager } from "@/features/money/money-components";
+import {
+  calculateMonthlyCashFlow,
+  calculateSpendingComparison,
+  financialMonthRange,
+  groupSpendingByCategory,
+  summarizeAccounts,
+  transactionsInRange,
+} from "@/lib/calculations";
+import {
+  getAccounts,
+  getBills,
+  getBudgetCategories,
+  getCurrentBudgets,
+  getInvestmentHoldings,
+  getInvestmentTransactions,
+  getPlaidItems,
+  getSubscriptions,
+  getTransactions,
+} from "@/lib/data";
+import { AccountManager, BillsManager, BudgetManager, SubscriptionsManager } from "@/features/money/money-components";
+import { MoneyExperience } from "@/features/money/money-experience";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageNotice } from "@/components/ui/page-notice";
-import { StatCard } from "@/components/ui/stat-card";
 
 export default async function MoneyPage({
   searchParams,
@@ -12,45 +28,74 @@ export default async function MoneyPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const filters = {
-    q: typeof params.q === "string" ? params.q : undefined,
-    type: typeof params.type === "string" ? params.type : undefined,
-    category: typeof params.category === "string" ? params.category : undefined,
-  };
-
-  const [accounts, categories, budgets, transactions, monthlyTransactions, bills, subscriptions, plaidItems] = await Promise.all([
+  const currentMonth = financialMonthRange();
+  const previousMonth = financialMonthRange(new Date(), -1);
+  const [
+    accounts,
+    categories,
+    budgets,
+    transactions,
+    bills,
+    subscriptions,
+    plaidItems,
+    investmentHoldings,
+    investmentTransactions,
+  ] = await Promise.all([
     getAccounts(true),
     getBudgetCategories(true),
-    getCurrentBudgets(),
-    getTransactions(filters),
-    getMonthlyTransactions(),
+    getCurrentBudgets(new Date(`${currentMonth.from}T12:00:00.000Z`)),
+    getTransactions({}, undefined, 1000),
     getBills(true),
     getSubscriptions(),
     getPlaidItems(),
+    getInvestmentHoldings(),
+    getInvestmentTransactions(),
   ]);
 
-  const monthlySpending = calculateMonthlySpending(monthlyTransactions);
-  const savingsRate = calculateSavingsRate(monthlyTransactions);
-  const subscriptionMonthly = subscriptions
-    .filter((subscription) => subscription.active)
-    .reduce((total, subscription) => total + normalizeSubscriptionCost(subscription).monthly, 0);
+  const accountSummary = summarizeAccounts(accounts);
+  const currentTransactions = transactionsInRange(transactions, currentMonth);
+  const currentCashFlow = calculateMonthlyCashFlow(currentTransactions);
+  const previousCashFlow = calculateMonthlyCashFlow(transactions, previousMonth);
+  const spendingCategories = groupSpendingByCategory(currentTransactions, categories);
+  const financialOverview = {
+    netWorth: accountSummary.netWorth,
+    cash: accountSummary.cash,
+    investments: accountSummary.investments,
+    creditCardDebt: accountSummary.creditCardDebt,
+    income: currentCashFlow.income,
+    spending: currentCashFlow.spending,
+    cashFlow: currentCashFlow.cashFlow,
+    spendingComparison: calculateSpendingComparison(currentCashFlow.spending, previousCashFlow.spending),
+    previousMonthLabel: previousMonth.label.replace(/\s+\d{4}$/, ""),
+  };
 
   return (
     <>
-      <PageHeader title="Money" description="Financial tracking for accounts, spending, budgets, bills, subscriptions, and synced transactions." />
+      <PageHeader
+        title="Money"
+        description="A live view of what you own, what you owe, and where this month’s money is going."
+      />
       <PageNotice notice={params.notice} error={params.error} />
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <StatCard label="Net worth" value={money(calculateNetWorth(accounts))} detail="Credit cards reduce this total" />
-        <StatCard label="Month spending" value={money(monthlySpending)} detail="Expenses only, transfers excluded" />
-        <StatCard label="Savings rate" value={savingsRate === null ? "No income" : percentage(savingsRate)} detail="Income minus expenses" />
-        <StatCard label="Subscriptions" value={money(subscriptionMonthly)} detail="Monthly equivalent" />
-      </section>
+      <MoneyExperience
+        accounts={accounts}
+        categories={categories}
+        transactions={transactions}
+        currentMonth={currentMonth}
+        financialOverview={financialOverview}
+        spendingCategories={spendingCategories}
+        accountsSection={(
+          <AccountManager
+            accounts={accounts}
+            plaidItems={plaidItems}
+            investmentHoldings={investmentHoldings}
+            investmentTransactions={investmentTransactions}
+          />
+        )}
+      />
 
-      <section className="mt-6 grid gap-6">
-        <AccountManager accounts={accounts} plaidItems={plaidItems} />
-        <TransactionManager accounts={accounts} categories={categories} transactions={transactions} filters={filters} />
-        <BudgetManager categories={categories} budgets={budgets} transactions={monthlyTransactions} />
+      <section className="mt-6 grid gap-6" aria-label="Planning and recurring money tools">
+        <BudgetManager categories={categories} budgets={budgets} transactions={currentTransactions} />
         <BillsManager accounts={accounts} categories={categories} bills={bills} />
         <SubscriptionsManager accounts={accounts} categories={categories} subscriptions={subscriptions} />
       </section>

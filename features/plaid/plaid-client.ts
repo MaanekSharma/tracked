@@ -3,6 +3,16 @@
 import { env } from "@/lib/env";
 import { createClient } from "@/lib/supabase/browser";
 
+type PlaidFunctionDiagnostic = {
+  operation?: string;
+  error_type?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
+  display_message?: string | null;
+  request_id?: string | null;
+  http_status?: number | null;
+};
+
 export async function invokePlaidFunction<T>(name: string, body: Record<string, unknown> = {}) {
   const supabase = createClient();
   const {
@@ -24,9 +34,24 @@ export async function invokePlaidFunction<T>(name: string, body: Record<string, 
     body: JSON.stringify(body),
   });
 
-  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+  const payload = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    diagnostic?: PlaidFunctionDiagnostic;
+  };
   if (!response.ok) {
-    throw new Error(payload.error ?? "Unable to complete the bank connection request.");
+    console.error("[TRACKED Plaid function error]", {
+      function: name,
+      response_status: response.status,
+      ...payload.diagnostic,
+    });
+    const developmentDetails = process.env.NODE_ENV === "development"
+      ? [
+          payload.diagnostic?.error_code ? `Plaid error: ${payload.diagnostic.error_code}.` : null,
+          payload.diagnostic?.request_id ? `Request ID: ${payload.diagnostic.request_id}.` : null,
+        ].filter(Boolean).join(" ")
+      : "";
+    const message = payload.error ?? "Unable to complete the bank connection request.";
+    throw new Error(developmentDetails ? `${message} ${developmentDetails}` : message);
   }
 
   return payload as T;

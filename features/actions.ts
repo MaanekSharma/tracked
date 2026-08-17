@@ -9,7 +9,7 @@ import { getNextRecurrenceDate } from "@/lib/calculations";
 import { env } from "@/lib/env";
 import { hasFutureRecurrence } from "@/lib/recurrence-progress";
 import { createClient } from "@/lib/supabase/server";
-import type { AccountType, BillingFrequency, Priority, Recurrence, TaskStatus } from "@/types/domain";
+import type { AccountType, BillingFrequency, Priority, Recurrence, TaskStatus, TransactionType } from "@/types/domain";
 
 const accountTypes = [
   "chequing",
@@ -302,9 +302,79 @@ export async function deleteAccountAction(formData: FormData) {
     "/money",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
-      await assertNoError(await supabase.from("accounts").delete().eq("id", id).eq("user_id", userId));
+      const { data: account, error: accountError } = await supabase
+        .from("accounts")
+        .select("id, plaid_item_uuid")
+        .eq("id", id)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (accountError) throw new Error("Unable to verify this account before deletion.");
+      if (!account) throw new Error("Account not found or you do not have permission to delete it.");
+
+      if (account.plaid_item_uuid) {
+        const { data: plaidItem, error: plaidItemError } = await supabase
+          .from("plaid_items")
+          .select("status")
+          .eq("id", account.plaid_item_uuid)
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (plaidItemError) throw new Error("Unable to verify this account's Plaid connection.");
+        if (!plaidItem || plaidItem.status !== "disconnected") {
+          throw new Error("Disconnect this bank connection before permanently deleting its accounts.");
+        }
+      }
+
+      const { data: deletedAccount, error: deleteError } = await supabase
+        .from("accounts")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", userId)
+        .select("id")
+        .maybeSingle();
+
+      if (deleteError) throw new Error("Unable to permanently delete this account.");
+      if (!deletedAccount) throw new Error("Account not found or you do not have permission to delete it.");
+
+      revalidatePath("/(app)", "layout");
     },
     "deleted",
+  );
+}
+
+export async function linkPlaidAccountAction(formData: FormData) {
+  await mutate(
+    formData,
+    "/money",
+    async (supabase) => {
+      const sourceAccountId = idSchema.parse(text(formData, "source_plaid_account_id"));
+      const targetAccountId = idSchema.parse(text(formData, "target_manual_account_id"));
+      await assertNoError(await supabase.rpc("link_manual_account_to_plaid", {
+        source_plaid_account_uuid: sourceAccountId,
+        target_manual_account_uuid: targetAccountId,
+      }));
+    },
+    "updated",
+  );
+}
+
+export async function keepPlaidAccountSeparateAction(formData: FormData) {
+  await mutate(
+    formData,
+    "/money",
+    async (supabase, userId) => {
+      const id = idSchema.parse(text(formData, "id"));
+      await assertNoError(
+        await supabase
+          .from("accounts")
+          .update({ reconciliation_status: "not_needed", include_in_net_worth: true })
+          .eq("id", id)
+          .eq("user_id", userId)
+          .not("plaid_account_id", "is", null),
+      );
+    },
+    "updated",
   );
 }
 
@@ -357,6 +427,7 @@ const transactionSchema = z.object({
   posted_date: optionalDate,
   notes: optionalText,
   pending: z.boolean(),
+  excluded_from_spending: z.boolean(),
 }).superRefine((value, ctx) => {
   if (value.type === "transfer") {
     if (!value.destination_account_id) {
@@ -364,9 +435,6 @@ const transactionSchema = z.object({
     }
     if (value.destination_account_id === value.account_id) {
       ctx.addIssue({ code: "custom", path: ["destination_account_id"], message: "Transfer accounts must differ." });
-    }
-    if (value.category_id) {
-      ctx.addIssue({ code: "custom", path: ["category_id"], message: "Transfers are not categorized for spending." });
     }
   }
 });
@@ -385,6 +453,7 @@ export async function createTransactionAction(formData: FormData) {
       posted_date: text(formData, "posted_date"),
       notes: text(formData, "notes"),
       pending: checked(formData, "pending"),
+      excluded_from_spending: checked(formData, "excluded_from_spending"),
     });
     const normalized = input.type === "transfer" ? { ...input, category_id: null } : { ...input, destination_account_id: null };
     await assertNoError(
@@ -416,6 +485,7 @@ export async function updateTransactionAction(formData: FormData) {
         posted_date: text(formData, "posted_date"),
         notes: text(formData, "notes"),
         pending: checked(formData, "pending"),
+        excluded_from_spending: checked(formData, "excluded_from_spending"),
       });
       const normalized = input.type === "transfer" ? { ...input, category_id: null } : { ...input, destination_account_id: null };
       await assertNoError(
@@ -424,6 +494,60 @@ export async function updateTransactionAction(formData: FormData) {
           .update({
             ...normalized,
             category_source: "manual",
+          })
+          .eq("id", id)
+          .eq("user_id", userId),
+      );
+    },
+    "updated",
+  );
+}
+
+const transactionMetadataSchema = z.object({
+  category_id: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+    z.string().uuid().nullable(),
+  ),
+  classification: z.enum(["automatic", ...transactionTypes]),
+  excluded_from_spending: z.boolean(),
+  notes: optionalText,
+});
+
+export async function updateTransactionMetadataAction(formData: FormData) {
+  await mutate(
+    formData,
+    "/money",
+    async (supabase, userId) => {
+      const id = idSchema.parse(text(formData, "id"));
+      const input = transactionMetadataSchema.parse({
+        category_id: text(formData, "category_id"),
+        classification: text(formData, "classification"),
+        excluded_from_spending: checked(formData, "excluded_from_spending"),
+        notes: text(formData, "notes"),
+      });
+      const { data: transaction, error } = await supabase
+        .from("transactions")
+        .select("id")
+        .eq("id", id)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error) throw new Error("Unable to load this transaction before saving.");
+      if (!transaction) throw new Error("Transaction not found or you do not have permission to edit it.");
+
+      const selectedType = input.classification === "automatic"
+        ? null
+        : input.classification as TransactionType;
+
+      await assertNoError(
+        await supabase
+          .from("transactions")
+          .update({
+            type_override: selectedType,
+            category_id: input.category_id,
+            category_source: "manual",
+            excluded_from_spending: input.excluded_from_spending,
+            notes: input.notes,
           })
           .eq("id", id)
           .eq("user_id", userId),

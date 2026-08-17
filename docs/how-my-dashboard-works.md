@@ -245,6 +245,9 @@ Output: Returns on success, throws on invalid webhook.
 | `plaid_items` | Plaid metadata | User-owned; referenced by accounts/private credentials | Safe frontend-readable item metadata |
 | `private.plaid_credentials` | Plaid secrets | `plaid_item_uuid,user_id -> plaid_items` | Access tokens, service-role only |
 | `plaid_category_rules` | Plaid categorization | Optional category override rules | Used by sync code; no UI yet |
+| `investment_securities` | Plaid Investments | User and Item-owned normalized security metadata | Safe frontend-readable; RLS select-own |
+| `investment_holdings` | Plaid Investments | User, Item, account, and security-owned current positions | Snapshot-upserted; RLS select-own |
+| `investment_transactions` | Plaid Investments | User, Item, account, and optional security-owned activity | Separate from spending analytics; RLS select-own |
 
 Tables/columns that appear underused:
 
@@ -269,6 +272,8 @@ Money page
 -> plaid_items upsert stores safe item metadata
 -> private.plaid_credentials stores access token through service-role RPC
 -> accountsGet upserts synced accounts
+-> investment accounts are feature-detected and synced separately when supported
+-> possible manual-account matches wait for explicit reconciliation and are excluded from net worth meanwhile
 -> transactionsSync imports transactions
 -> Money dashboard refreshes
 ```
