@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_TRANSACTION_MONTHS,
   calculateMonthlyCashFlow,
   calculateSpendingComparison,
   filterTransactions,
@@ -171,6 +172,14 @@ describe("category analytics and transaction filters", () => {
     transaction({ id: "four", account_id: "amex", category_id: "dining", amount: 30, type_override: "transfer" }),
     transaction({ id: "five", account_id: "amex", category_id: "dining", amount: 20, excluded_from_spending: true }),
     transaction({ id: "july", account_id: "amex", category_id: "dining", amount: 10, transaction_date: "2026-07-31" }),
+    transaction({
+      id: "historical",
+      account_id: "chequing",
+      category_id: "groceries",
+      amount: 25,
+      merchant: "Old Market",
+      transaction_date: "2025-12-15",
+    }),
   ];
 
   it("ranks included expense categories only", () => {
@@ -191,6 +200,53 @@ describe("category analytics and transaction filters", () => {
       categoryId: "dining",
       search: "cafe",
     }).map((row) => row.id)).toEqual(["one"]);
+  });
+
+  it("treats All months as no month constraint while preserving other filters", () => {
+    expect(filterTransactions(rows, { month: ALL_TRANSACTION_MONTHS }).map((row) => row.id)).toEqual([
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+      "july",
+      "historical",
+    ]);
+    expect(filterTransactions(rows, { month: ALL_TRANSACTION_MONTHS, accountId: "chequing" }).map((row) => row.id)).toEqual([
+      "three",
+      "historical",
+    ]);
+    expect(filterTransactions(rows, { month: ALL_TRANSACTION_MONTHS, categoryId: "groceries" }).map((row) => row.id)).toEqual([
+      "three",
+      "historical",
+    ]);
+    expect(filterTransactions(rows, { month: ALL_TRANSACTION_MONTHS, search: "old market" }).map((row) => row.id)).toEqual([
+      "historical",
+    ]);
+  });
+
+  it("filters by the selected month and year and returns no rows for an empty month", () => {
+    expect(filterTransactions(rows, { month: "2026-08" }).map((row) => row.id)).toEqual([
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+    ]);
+    expect(filterTransactions(rows, { month: "2026-07" }).map((row) => row.id)).toEqual(["july"]);
+    expect(filterTransactions(rows, { month: "2025-12" }).map((row) => row.id)).toEqual(["historical"]);
+    expect(filterTransactions(rows, { month: "2024-01" })).toEqual([]);
+  });
+
+  it("can switch repeatedly between specific and all-month views", () => {
+    const selections = ["2026-08", ALL_TRANSACTION_MONTHS, "2026-07", ALL_TRANSACTION_MONTHS];
+
+    expect(selections.map((month) => filterTransactions(rows, { month }).map((row) => row.id))).toEqual([
+      ["one", "two", "three", "four", "five"],
+      ["one", "two", "three", "four", "five", "july", "historical"],
+      ["july"],
+      ["one", "two", "three", "four", "five", "july", "historical"],
+    ]);
   });
 });
 

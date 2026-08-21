@@ -289,13 +289,15 @@ export type TransactionFilters = {
   month?: string;
 };
 
+export const ALL_TRANSACTION_MONTHS = "all";
+
 export function filterTransactions(transactions: Transaction[], filters: TransactionFilters) {
   const search = filters.search?.trim().toLocaleLowerCase("en-CA") ?? "";
 
   return transactions.filter((transaction) => {
     if (transaction.removed_at) return false;
     if (filters.accountId && transaction.account_id !== filters.accountId) return false;
-    if (filters.month && filters.month !== "all" && transaction.transaction_date.slice(0, 7) !== filters.month) return false;
+    if (filters.month && filters.month !== ALL_TRANSACTION_MONTHS && transaction.transaction_date.slice(0, 7) !== filters.month) return false;
     if (filters.categoryId === "__uncategorized__" && transaction.category_id !== null) return false;
     if (filters.categoryId && filters.categoryId !== "__uncategorized__" && transaction.category_id !== filters.categoryId) return false;
     if (!search) return true;

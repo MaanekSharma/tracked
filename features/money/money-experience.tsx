@@ -5,8 +5,10 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Banknote,
+  ChartNoAxesCombined,
   CheckCircle2,
   CreditCard,
+  Download,
   Landmark,
   ListFilter,
   PencilLine,
@@ -24,12 +26,19 @@ import {
   updateTransactionAction,
   updateTransactionMetadataAction,
 } from "@/features/actions";
+import { TransactionAnalysisDialog } from "@/features/money/transaction-analysis-dialog";
 import {
+  ALL_TRANSACTION_MONTHS,
   effectiveTransactionType,
   filterTransactions,
   type FinancialMonthRange,
   type SpendingCategory,
 } from "@/lib/calculations";
+import {
+  previousTransactionMonth,
+  transactionExportFilename,
+  transactionsToCsv,
+} from "@/lib/transaction-analysis";
 import { cn, formatDate, money, todayISO } from "@/lib/utils";
 import type { Account, BudgetCategory, Transaction, TransactionType } from "@/types/domain";
 import { Badge } from "@/components/ui/badge";
@@ -369,6 +378,7 @@ function TransactionExplorer({
   const [accountId, setAccountId] = React.useState("");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [adding, setAdding] = React.useState(false);
+  const [analyzing, setAnalyzing] = React.useState(false);
   const [visibleLimit, setVisibleLimit] = React.useState(PAGE_SIZE);
   const selectedTransaction = transactions.find((transaction) => transaction.id === selectedId) ?? null;
   const months = React.useMemo(() => {
@@ -376,29 +386,53 @@ function TransactionExplorer({
     keys.add(currentMonth.key);
     return [...keys].sort((a, b) => b.localeCompare(a));
   }, [currentMonth.key, transactions]);
-  const filteredTransactions = React.useMemo(
-    () => filterTransactions(transactions, {
+  const transactionFilters = React.useMemo(
+    () => ({
       search,
       accountId: accountId || undefined,
       categoryId: categoryFilter || undefined,
       month,
     }),
-    [accountId, categoryFilter, month, search, transactions],
+    [accountId, categoryFilter, month, search],
+  );
+  const filteredTransactions = React.useMemo(
+    () => filterTransactions(transactions, transactionFilters),
+    [transactionFilters, transactions],
+  );
+  const previousMonth = month === ALL_TRANSACTION_MONTHS ? null : previousTransactionMonth(month);
+  const previousComparableTransactions = React.useMemo(
+    () => analyzing && previousMonth
+      ? filterTransactions(transactions, { ...transactionFilters, month: previousMonth })
+      : undefined,
+    [analyzing, previousMonth, transactionFilters, transactions],
   );
   const visibleTransactions = filteredTransactions.slice(0, visibleLimit);
-  const hasFilters = Boolean(search || accountId || categoryFilter || month !== ALL);
+  const hasFilters = Boolean(search || accountId || categoryFilter || month !== ALL_TRANSACTION_MONTHS);
 
   function clearFilters() {
     setSearch("");
     setAccountId("");
     onCategoryFilterChange("");
-    onMonthChange(ALL);
+    onMonthChange(ALL_TRANSACTION_MONTHS);
     setVisibleLimit(PAGE_SIZE);
   }
 
   function useCategoryFilter(value: string) {
     onCategoryFilterChange(value === ALL ? "" : value);
     setVisibleLimit(PAGE_SIZE);
+  }
+
+  function exportTransactions() {
+    const csv = transactionsToCsv(filteredTransactions, accounts, categories);
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = transactionExportFilename(month);
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   return (
@@ -465,7 +499,7 @@ function TransactionExplorer({
                   <SelectValue placeholder="All months" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ALL}>All months</SelectItem>
+                  <SelectItem value={ALL_TRANSACTION_MONTHS}>All months</SelectItem>
                   {months.map((key) => <SelectItem key={key} value={key}>{monthLabel(key)}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -474,12 +508,26 @@ function TransactionExplorer({
                 Clear
               </Button>
             </div>
-            {categoryFilter ? (
-              <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                <ListFilter className="size-3.5 text-primary" />
-                Category filter is active; month, account, and search filters continue to apply.
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <ListFilter className="size-3.5 shrink-0 text-primary" />
+                <span>
+                  {categoryFilter
+                    ? "Category filter is active; month, account, and search filters continue to apply."
+                    : "Analysis and export include every matching transaction, not just the rows currently shown."}
+                </span>
               </div>
-            ) : null}
+              <div className="flex shrink-0 gap-2">
+                <Button type="button" variant="secondary" size="sm" onClick={() => setAnalyzing(true)}>
+                  <ChartNoAxesCombined className="size-4" />
+                  Analyze
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={exportTransactions}>
+                  <Download className="size-4" />
+                  Export CSV
+                </Button>
+              </div>
+            </div>
           </div>
 
           {visibleTransactions.length ? (
@@ -516,6 +564,18 @@ function TransactionExplorer({
         accounts={accounts}
         categories={categories}
       />
+      {analyzing ? (
+        <TransactionAnalysisDialog
+          open
+          onOpenChange={setAnalyzing}
+          transactions={filteredTransactions}
+          categories={categories}
+          periodLabel={month === ALL_TRANSACTION_MONTHS ? "All loaded history" : monthLabel(month)}
+          currentMonth={month === ALL_TRANSACTION_MONTHS ? undefined : month}
+          previousMonth={previousMonth ?? undefined}
+          previousTransactions={previousComparableTransactions}
+        />
+      ) : null}
     </section>
   );
 }

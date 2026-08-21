@@ -49,7 +49,8 @@ Deno.serve(async (req) => {
         : {
             products: [Products.Transactions],
             additional_consented_products: [Products.Investments],
-            transactions: { days_requested: 90 },
+            // Request up to 24 months of history for newly created Plaid Items.
+            transactions: { days_requested: 730 },
           }),
     };
 
