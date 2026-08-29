@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Manrope, Roboto_Mono } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
+import "@fullcalendar/react/skeleton.css";
+import "@fullcalendar/react/themes/classic/theme.css";
+import "@fullcalendar/react/themes/classic/palette.css";
 import "./globals.css";
 
 const manrope = Manrope({

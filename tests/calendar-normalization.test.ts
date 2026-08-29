@@ -174,6 +174,15 @@ describe("calendar source normalization", () => {
     });
     expect(calendarDateKey(item?.startAt ?? "", DEFAULT_CALENDAR_TIME_ZONE)).toBe("2026-01-04");
   });
+
+  it("marks paused chores as visible schedule details rather than movable items", () => {
+    const item = normalizeChoreForCalendar(chore({ status: "paused" }), DEFAULT_CALENDAR_TIME_ZONE);
+
+    expect(item).toMatchObject({
+      sourceType: "chore",
+      scheduleEditable: false,
+    });
+  });
 });
 
 describe("buildCalendarItemsFromSources", () => {

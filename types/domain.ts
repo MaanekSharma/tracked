@@ -506,6 +506,7 @@ export type CalendarItem = {
   startAt: string;
   endAt: string | null;
   allDay: boolean;
+  scheduleEditable?: boolean;
   detail?: string;
   recurrence: CalendarEventRecurrence;
   recurrenceInterval: number;
@@ -513,6 +514,8 @@ export type CalendarItem = {
   recurrenceEndDate: string | null;
   recurrenceCount: number | null;
   seriesId?: string | null;
+  seriesStartAt?: string;
+  seriesEndAt?: string | null;
   occurrenceDate?: string;
   isVirtualOccurrence?: boolean;
 };

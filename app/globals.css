@@ -139,9 +139,280 @@ textarea {
   border-style: dashed;
 }
 
+.tracked-calendar-shell {
+  position: relative;
+  isolation: isolate;
+  background-image:
+    radial-gradient(circle at 84% -20%, color-mix(in oklab, var(--primary) 9%, transparent), transparent 35%),
+    linear-gradient(180deg, color-mix(in oklab, var(--card) 98%, transparent), var(--card));
+}
+
+.tracked-calendar-progress {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 20;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.tracked-calendar-progress.is-active {
+  width: 45%;
+  opacity: 1;
+  animation: tracked-calendar-loading 1s ease-in-out infinite;
+}
+
+@keyframes tracked-calendar-loading {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(325%); }
+}
+
+.tracked-calendar-source-chip {
+  --source-color: var(--muted-foreground);
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.4rem;
+  height: 1.8rem;
+  padding: 0 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--background) 88%, transparent);
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  font-weight: 700;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease, opacity 150ms ease;
+}
+
+.tracked-calendar-source-chip::before {
+  content: "";
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: var(--source-color);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--source-color) 22%, transparent);
+}
+
+.tracked-calendar-source-chip > span {
+  min-width: 1.1rem;
+  border-radius: 999px;
+  padding: 0.05rem 0.3rem;
+  background: var(--muted);
+  text-align: center;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.62rem;
+}
+
+.tracked-calendar-source-chip:not(.is-active) {
+  opacity: 0.48;
+}
+
+.tracked-calendar-source-chip.is-active {
+  border-color: color-mix(in oklab, var(--source-color) 62%, var(--border));
+  background: color-mix(in oklab, var(--source-color) 11%, var(--background));
+  color: var(--foreground);
+}
+
+.tracked-calendar {
+  --fc-classic-primary: var(--primary);
+  --fc-classic-primary-foreground: var(--primary-foreground);
+  --fc-classic-event: var(--primary);
+  --fc-classic-event-contrast: var(--primary-foreground);
+  --fc-classic-background-event: var(--primary);
+  --fc-classic-background-event-opacity: 12%;
+  --fc-classic-highlight: color-mix(in oklab, var(--primary) 19%, transparent);
+  --fc-classic-today: color-mix(in oklab, var(--primary) 8%, transparent);
+  --fc-classic-now: #ef6f63;
+  --fc-classic-background: color-mix(in oklab, var(--card) 94%, var(--background));
+  --fc-classic-faint: color-mix(in oklab, var(--muted) 42%, transparent);
+  --fc-classic-muted: color-mix(in oklab, var(--muted) 72%, transparent);
+  --fc-classic-strong: color-mix(in oklab, var(--foreground) 13%, transparent);
+  --fc-classic-foreground: var(--foreground);
+  --fc-classic-faint-foreground: color-mix(in oklab, var(--muted-foreground) 65%, transparent);
+  --fc-classic-muted-foreground: var(--muted-foreground);
+  --fc-classic-border: color-mix(in oklab, var(--border) 78%, transparent);
+  --fc-classic-strong-border: var(--border);
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.tracked-calendar .tracked-calendar-view {
+  overflow: clip;
+  border-radius: 0.55rem;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--foreground) 3%, transparent);
+}
+
+.tracked-calendar .tracked-calendar-day,
+.tracked-calendar .tracked-calendar-day-lane,
+.tracked-calendar .tracked-calendar-slot {
+  transition: background-color 120ms ease;
+}
+
+.tracked-calendar .tracked-calendar-day:hover,
+.tracked-calendar .tracked-calendar-day-lane:hover,
+.tracked-calendar .tracked-calendar-slot:hover {
+  background-color: color-mix(in oklab, var(--primary) 4%, transparent);
+}
+
+.tracked-calendar .tracked-calendar-day-header {
+  min-height: 2.65rem;
+  background: color-mix(in oklab, var(--card) 88%, transparent);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.tracked-calendar .tracked-calendar-all-day-label {
+  color: var(--muted-foreground);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.tracked-calendar .tracked-calendar-now-line {
+  border-width: 2px 0 0 !important;
+  filter: drop-shadow(0 0 4px color-mix(in oklab, #ef6f63 55%, transparent));
+}
+
+.tracked-calendar .tracked-calendar-item {
+  --tracked-source: var(--primary);
+  overflow: hidden;
+  border-color: color-mix(in oklab, var(--tracked-source) 62%, transparent) !important;
+  background: color-mix(in oklab, var(--tracked-source) 64%, var(--card)) !important;
+  box-shadow:
+    inset 3px 0 0 color-mix(in oklab, var(--tracked-source) 90%, white),
+    0 2px 7px color-mix(in oklab, black 22%, transparent) !important;
+  transition: filter 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+
+.tracked-calendar .tracked-calendar-item:hover,
+.tracked-calendar .tracked-calendar-item:focus-visible {
+  z-index: 6;
+  filter: brightness(1.09) saturate(1.04);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 3px 0 0 color-mix(in oklab, var(--tracked-source) 90%, white),
+    0 8px 18px color-mix(in oklab, black 32%, transparent) !important;
+}
+
+.tracked-calendar .tracked-calendar-item--event { --tracked-source: #4f9bc5; }
+.tracked-calendar .tracked-calendar-item--task { --tracked-source: #8f87d7; }
+.tracked-calendar .tracked-calendar-item--bill { --tracked-source: #d69a54; }
+.tracked-calendar .tracked-calendar-item--chore { --tracked-source: #55a58e; }
+
+.tracked-calendar-event-content {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.15rem 0.3rem 0.2rem 0.38rem;
+  color: #fff;
+  line-height: 1.15;
+}
+
+.tracked-calendar-event-content.is-compact {
+  justify-content: center;
+  padding-block: 0.08rem;
+}
+
+.tracked-calendar-event-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tracked-calendar-event-icon {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 auto;
+  opacity: 0.88;
+}
+
+.tracked-calendar-event-title {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.69rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.tracked-calendar-event-status {
+  width: 0.65rem;
+  height: 0.65rem;
+  flex: 0 0 auto;
+  opacity: 0.72;
+}
+
+.tracked-calendar-event-time,
+.tracked-calendar-event-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6rem;
+  opacity: 0.78;
+}
+
+.tracked-calendar-event-content.is-compact .tracked-calendar-event-time,
+.tracked-calendar-event-content.is-compact .tracked-calendar-event-detail {
+  display: none;
+}
+
+.tracked-calendar-resize-cue {
+  position: absolute;
+  inset: auto 22% 1px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.tracked-calendar-item:hover .tracked-calendar-resize-cue {
+  opacity: 0.65;
+}
+
+.tracked-calendar * {
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 767px) {
+  .tracked-calendar {
+    padding: 0.35rem;
+    font-size: 0.72rem;
+  }
+
+  .tracked-calendar .tracked-calendar-day-header {
+    min-height: 2.25rem;
+    font-size: 0.64rem;
+    letter-spacing: 0.025em;
+  }
+
+  .tracked-calendar-event-title {
+    font-size: 0.64rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rpg-milestone-orbit,
-  .animate-pulse {
+  .animate-pulse,
+  .tracked-calendar-progress.is-active {
     animation: none !important;
+  }
+
+  .tracked-calendar .tracked-calendar-item,
+  .tracked-calendar-source-chip {
+    transition: none !important;
   }
 }

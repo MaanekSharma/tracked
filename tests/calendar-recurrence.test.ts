@@ -208,6 +208,43 @@ describe("expandRecurringItems", () => {
     expect(occurrenceDates(items)).toEqual(["2026-01-01", "2026-01-02", "2026-01-03"]);
   });
 
+  it("includes a multi-day item that starts before the visible range", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-08-10T04:00:00.000Z",
+          endAt: "2026-08-12T04:00:00.000Z",
+          allDay: true,
+        }),
+      ],
+      "2026-08-11",
+      "2026-08-11",
+      DEFAULT_CALENDAR_TIME_ZONE,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.occurrenceDate).toBe("2026-08-10");
+  });
+
+  it("includes a recurring multi-day occurrence that overlaps the range boundary", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-08-03T04:00:00.000Z",
+          endAt: "2026-08-05T04:00:00.000Z",
+          allDay: true,
+          recurrence: "weekly",
+        }),
+      ],
+      "2026-08-11",
+      "2026-08-11",
+      DEFAULT_CALENDAR_TIME_ZONE,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.occurrenceDate).toBe("2026-08-10");
+  });
+
   it("uses stable unique virtual occurrence IDs for recurring items", () => {
     const items = expandRecurringItems(
       [
@@ -227,6 +264,7 @@ describe("expandRecurringItems", () => {
       "event_calendar-123_2026-01-03",
     ]);
     expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+    expect(items.every((item) => item.seriesStartAt === "2026-01-01T15:00:00.000Z")).toBe(true);
   });
 
   it("keeps near-midnight local times on the intended Toronto calendar day", () => {
