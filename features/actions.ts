@@ -8,6 +8,8 @@ import { calendarDateKey, dateTimeLocalToIso, DEFAULT_CALENDAR_TIME_ZONE, normal
 import { getNextRecurrenceDate } from "@/lib/calculations";
 import { env } from "@/lib/env";
 import { hasFutureRecurrence } from "@/lib/recurrence-progress";
+import { requestLifeRpgReconciliation } from "@/lib/life-rpg/reconcile";
+import { RPG_CATEGORIES, RPG_DIFFICULTIES } from "@/lib/life-rpg";
 import { createClient } from "@/lib/supabase/server";
 import type { AccountType, BillingFrequency, Priority, Recurrence, TaskStatus, TransactionType } from "@/types/domain";
 
@@ -180,6 +182,13 @@ async function mutate(
   try {
     const { supabase, user } = await requireMutationUser();
     await operation(supabase, user.id);
+    const scope = fallback === "/tasks" ? "task"
+      : fallback === "/calendar" ? "calendar"
+      : fallback === "/goals" ? "goal"
+      : fallback === "/home" ? "home"
+      : fallback === "/money" ? "wealth"
+      : "full";
+    await requestLifeRpgReconciliation(supabase, [scope]);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Unable to save changes.";
   }
@@ -801,6 +810,8 @@ const taskSchema = z.object({
   priority: z.enum(priorities),
   due_date: optionalDate,
   due_time: optionalText,
+  rpg_category: z.preprocess((value) => value === "" ? null : value, z.enum(RPG_CATEGORIES).nullable()),
+  rpg_difficulty: z.enum(RPG_DIFFICULTIES),
 }).merge(recurrenceSchema);
 
 function normalizeTaskInput(input: z.infer<typeof taskSchema>) {
@@ -819,15 +830,22 @@ export async function createTaskAction(formData: FormData) {
       priority: text(formData, "priority") || "medium",
       due_date: text(formData, "due_date"),
       due_time: text(formData, "due_time"),
+      rpg_category: text(formData, "rpg_category"),
+      rpg_difficulty: text(formData, "rpg_difficulty") || "medium",
       ...recurrenceFormFields(formData),
     }));
-    await assertNoError(
-      await supabase.from("tasks").insert({
+    const requestedStatus = input.status;
+    const { data: task, error } = await supabase.from("tasks").insert({
         ...input,
-        completed_at: input.status === "completed" ? new Date().toISOString() : null,
+        status: requestedStatus === "completed" ? "open" : requestedStatus,
+        completed_at: null,
         user_id: userId,
-      }),
-    );
+      }).select("id").single();
+    if (error || !task) throw new Error(error?.message ?? "Unable to create task.");
+    if (requestedStatus === "completed") {
+      await requestLifeRpgReconciliation(supabase, ["full"]);
+      await assertNoError(await supabase.rpc("complete_task_occurrence", { target_task_id: task.id }));
+    }
   });
 }
 
@@ -844,18 +862,26 @@ export async function updateTaskAction(formData: FormData) {
         priority: text(formData, "priority") || "medium",
         due_date: text(formData, "due_date"),
         due_time: text(formData, "due_time"),
+        rpg_category: text(formData, "rpg_category"),
+        rpg_difficulty: text(formData, "rpg_difficulty") || "medium",
         ...recurrenceFormFields(formData),
       }));
+      const requestedStatus = input.status;
       await assertNoError(
         await supabase
           .from("tasks")
           .update({
             ...input,
-            completed_at: input.status === "completed" ? new Date().toISOString() : null,
+            status: requestedStatus === "completed" ? "open" : requestedStatus,
+            completed_at: null,
           })
           .eq("id", id)
           .eq("user_id", userId),
       );
+      if (requestedStatus === "completed") {
+        await requestLifeRpgReconciliation(supabase, ["full"]);
+        await assertNoError(await supabase.rpc("complete_task_occurrence", { target_task_id: id }));
+      }
     },
     "updated",
   );
@@ -865,11 +891,10 @@ export async function completeTaskAction(formData: FormData) {
   await mutate(
     formData,
     "/tasks",
-    async (supabase, userId) => {
+    async (supabase) => {
       const id = idSchema.parse(text(formData, "id"));
-      await assertNoError(
-        await supabase.from("tasks").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", id).eq("user_id", userId),
-      );
+      await requestLifeRpgReconciliation(supabase, ["full"]);
+      await assertNoError(await supabase.rpc("complete_task_occurrence", { target_task_id: id }));
     },
     "updated",
   );
@@ -1028,7 +1053,7 @@ export async function createCalendarEventAction(formData: FormData) {
       category: text(formData, "category"),
       ...recurrenceFormFields(formData),
     }), timeZone);
-    await assertNoError(await supabase.from("calendar_events").insert({ ...input, user_id: userId }));
+    await assertNoError(await supabase.from("calendar_events").insert({ ...input, timezone: timeZone, user_id: userId }));
   });
 }
 
@@ -1038,6 +1063,7 @@ export async function updateCalendarEventAction(formData: FormData) {
     "/calendar",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
+      await requestLifeRpgReconciliation(supabase, ["calendar"]);
       const timeZone = await getUserTimeZone(supabase, userId);
       const input = normalizeCalendarEventInput(eventSchema.parse({
         title: text(formData, "title"),
@@ -1049,7 +1075,7 @@ export async function updateCalendarEventAction(formData: FormData) {
         category: text(formData, "category"),
         ...recurrenceFormFields(formData),
       }), timeZone);
-      await assertNoError(await supabase.from("calendar_events").update(input).eq("id", id).eq("user_id", userId));
+      await assertNoError(await supabase.from("calendar_events").update({ ...input, timezone: timeZone }).eq("id", id).eq("user_id", userId));
     },
     "updated",
   );
@@ -1061,6 +1087,7 @@ export async function deleteCalendarEventAction(formData: FormData) {
     "/calendar",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
+      await requestLifeRpgReconciliation(supabase, ["calendar"]);
       await assertNoError(await supabase.from("calendar_events").delete().eq("id", id).eq("user_id", userId));
     },
     "deleted",

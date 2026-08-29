@@ -11,18 +11,18 @@ The V1 app is built with Next.js App Router, TypeScript, Tailwind CSS, shadcn-st
 - Row Level Security on every user-owned table.
 - Default budget category seeding for new users.
 - Responsive authenticated shell with TRACKED branding, sidebar/mobile navigation, theme support, and global quick add.
-- Overview dashboard with real-data financial summary, today's tasks, upcoming items, budget snapshot, goals, and home attention.
+- LIFE RPG character dashboard at `/overview`, with Level 24 baseline progression, seven evidence-backed stats, quests, effects, weekly reports, achievements, Today, and compact money context.
 - Money module for accounts, transactions, categories, monthly budgets, bills, and subscriptions.
 - Plaid Sandbox bank/credit-card sync for Canadian Transactions through Supabase Edge Functions.
 - Tasks module with Inbox, Today, Upcoming, and Completed views.
-- Goals module with measurable progress and history.
+- Goals module with measurable progress and history plus Daily, Weekly, and Main quests under the same destination.
 - Internal calendar combining native events, task due dates, bill due dates, and chore due dates.
 - Home module for active bills requiring attention and recurring chores.
 - Settings for display name, CAD preference, timezone, theme, and savings-rate target.
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 24.x (pinned in `.nvmrc` and `.node-version`)
 - npm
 - Supabase project
 - Supabase CLI if you want to run migrations from your machine
@@ -69,7 +69,7 @@ Hosted Supabase Edge Functions provide server-side Supabase credentials automati
 3. Add redirect URLs:
    - `http://localhost:3000/reset-password`
    - your Vercel production URL plus `/reset-password`
-4. Run the migration in `supabase/migrations/20260808000000_initial_tracked_schema.sql`.
+4. Apply every migration in `supabase/migrations/` in timestamp order. LIFE RPG is additive and does not replace existing TRACKED tables.
 
 With Supabase CLI:
 
@@ -97,6 +97,7 @@ npx supabase functions deploy plaid-exchange-public-token
 npx supabase functions deploy plaid-sync-transactions
 npx supabase functions deploy plaid-webhook
 npx supabase functions deploy plaid-disconnect-item
+npx supabase functions deploy life-rpg-reconcile
 ```
 
 In the Plaid Dashboard, set the webhook URL for the app/environment to:
@@ -137,6 +138,12 @@ Production test flow (avoid consuming duplicate Trial Items):
 - Recurring calendar-capable records stay in their source tables (`calendar_events`, `bills`, `tasks`, and `chores`); visible occurrences are generated in the application layer for bounded date ranges.
 - Chore definitions keep `next_due_date` for fast dashboard queries; completion events live in `chore_completions`.
 - Goal progress updates are deltas in `goal_updates.delta`; `goals.current_value` is maintained by database triggers from `initial_value + sum(delta)`.
+- LIFE RPG starts overall progression at Level 24 with 48,300 baseline XP. Pre-initialization activity never enters the XP ledger.
+- `rpg_xp_events` and `task_completions` are immutable, idempotent system records. Authenticated users can read their own rows; only trusted functions can write them.
+- Recurring task completion is occurrence-based. The authenticated `complete_task_occurrence` RPC records one occurrence, snapshots its RPG metadata, awards stable XP slots, and advances or finishes the series atomically.
+- Calendar Social/Career XP uses the event's captured profile timezone. Elapsed qualifying occurrences are capped; no attendance state is implied.
+- Wealth XP is conservative: no transaction-level awards. A completed month can earn one Hard award when finalized, transfer-filtered savings meets an explicit target.
+- Weekly reports use Sunday–Saturday in the profile timezone. Closed reports are immutable and never claim historical net-worth movement.
 
 ## Run Locally
 
@@ -150,7 +157,9 @@ Open `http://localhost:3000`.
 
 ```bash
 npm run lint
-npm run build
+npx tsc --noEmit
+npm test
+npm run build # run with Node 24
 ```
 
 Both commands should pass before deployment.
@@ -171,8 +180,9 @@ components/shell/     Authenticated app shell and quick add
 components/ui/        shadcn-style shared primitives
 features/             Server actions and feature components
 lib/                  Supabase clients, auth, data, bootstrap, calculations
+lib/life-rpg/         Runtime-neutral progression, stat, quest, effect, achievement, and weekly rules
 supabase/migrations/  PostgreSQL schema and RLS policies
-supabase/functions/   Supabase Edge Functions for Plaid
+supabase/functions/   Supabase Edge Functions for Plaid and LIFE RPG reconciliation
 types/                Domain model types
 ```
 
@@ -184,3 +194,4 @@ types/                Domain model types
 - No multi-user household sharing.
 - No pantry, warranty, advanced health, investment market, or AI features.
 - Bill payment history is recorded, but marking a bill paid does not automatically create a financial transaction in V1.
+- Strength and Health use tagged tasks and quests only. Workout tracking, workout-based Locked In, investment-contribution XP, internal-transfer matching, direct Goal rewards, and historical XP reconstruction remain intentionally deferred.

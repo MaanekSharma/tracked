@@ -20,6 +20,7 @@ import {
   type ReconciliationAccount,
 } from "./plaid-account-normalization.ts";
 import { syncPlaidInvestments, type InvestmentSyncSummary } from "./plaid-investments.ts";
+import { requestWealthReconciliation } from "./rpg-reconciliation.ts";
 
 type PlaidItemRow = {
   id: string;
@@ -609,6 +610,8 @@ async function syncItem(admin: SupabaseClient, item: PlaidItemRow, accessToken: 
     investments_status: investmentSummary.status,
   });
 
+  requestWealthReconciliation(admin, item.user_id);
+
   return {
     added: added.length,
     modified: modified.length,
@@ -644,5 +647,7 @@ export async function syncPlaidInvestmentsByPlaidId(
   const accessToken = await getPlaidAccessToken(admin, item.id);
   await refreshAccounts(admin, item, accessToken);
   const accountMap = await loadInvestmentAccountMap(admin, item.user_id, item.id);
-  return syncPlaidInvestments(admin, item, accessToken, accountMap, options);
+  const result = await syncPlaidInvestments(admin, item, accessToken, accountMap, options);
+  requestWealthReconciliation(admin, item.user_id);
+  return result;
 }

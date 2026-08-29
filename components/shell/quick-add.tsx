@@ -17,6 +17,7 @@ import {
 } from "@/features/actions";
 import { accountTypeLabels, type Account, type BudgetCategory } from "@/types/domain";
 import { monthStartISO, todayISO } from "@/lib/utils";
+import { CALENDAR_CATEGORY_OPTIONS, GOAL_CATEGORY_OPTIONS, OPTIONAL_RPG_CATEGORY_OPTIONS, RPG_DIFFICULTY_OPTIONS } from "@/lib/life-rpg";
 
 const transactionTypeOptions = [
   { value: "expense", label: "Expense" },
@@ -119,6 +120,8 @@ export function QuickAdd({ accounts, categories }: { accounts: Account[]; catego
               <SelectField label="Priority" name="priority" defaultValue="medium" options={priorityOptions} />
               <TextField label="Due date" name="due_date" type="date" />
               <TextField label="Due time" name="due_time" type="time" />
+              <SelectField label="RPG stat" name="rpg_category" options={OPTIONAL_RPG_CATEGORY_OPTIONS} />
+              <SelectField label="Difficulty" name="rpg_difficulty" defaultValue="medium" options={RPG_DIFFICULTY_OPTIONS} />
               <CalendarRecurrenceFields />
               <input type="hidden" name="status" value="open" />
             </FormGrid>
@@ -152,7 +155,7 @@ export function QuickAdd({ accounts, categories }: { accounts: Account[]; catego
             <HiddenRedirect to={pathname} />
             <FormGrid>
               <TextField label="Title" name="title" required />
-              <TextField label="Category" name="category" />
+              <SelectField label="Category" name="category" options={GOAL_CATEGORY_OPTIONS} />
               <TextField label="Target value" name="target_value" type="number" min="0.01" step="0.01" required />
               <TextField label="Initial value" name="initial_value" type="number" min="0" step="0.01" defaultValue={0} />
               <TextField label="Unit" name="unit" defaultValue="count" required />
@@ -173,7 +176,7 @@ export function QuickAdd({ accounts, categories }: { accounts: Account[]; catego
               <TextField label="Start" name="start_at" type="datetime-local" required />
               <TextField label="End" name="end_at" type="datetime-local" />
               <TextField label="Location" name="location" />
-              <TextField label="Category" name="category" />
+              <SelectField label="Category" name="category" options={CALENDAR_CATEGORY_OPTIONS} />
               <CalendarRecurrenceFields />
             </FormGrid>
             <CheckboxField label="All day" name="all_day" />

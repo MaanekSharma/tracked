@@ -24,6 +24,7 @@ import type {
   InvestmentTransaction,
   PlaidItem,
   Profile,
+  RpgQuest,
   Subscription,
   Task,
   Transaction,
@@ -225,6 +226,19 @@ export async function getGoalUpdates(goalId?: string) {
   if (goalId) query = query.eq("goal_id", goalId);
   const { data } = await query;
   return (data ?? []) as GoalUpdate[];
+}
+
+export async function getRpgQuests(includeInactive = true) {
+  const { supabase } = await getUserScopedClient();
+  let query = supabase
+    .from("rpg_quests")
+    .select("*, rpg_quest_objectives(*)")
+    .order("status")
+    .order("ends_on", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false });
+  if (!includeInactive) query = query.eq("status", "active");
+  const { data } = await query;
+  return (data ?? []) as RpgQuest[];
 }
 
 export async function getCalendarEvents(range?: { from: string; to: string }) {
