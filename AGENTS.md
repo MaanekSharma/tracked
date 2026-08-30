@@ -1,30 +1,3 @@
-Yep — and this clears it up.
-
-The **first big section you pasted is your `README.md`**, and the tiny section at the bottom is currently your actual **`AGENTS.md`**.
-
-Right now, your `AGENTS.md` is basically just this Next.js-generated instruction:
-
-> “This version of Next.js may differ from what the model knows. Read the docs installed in `node_modules` before changing Next.js code.”
-
-That’s useful, but it **doesn’t contain any TRACKED-specific instructions yet**.
-
-The important part is this comment:
-
-```text
-<!-- BEGIN:nextjs-agent-rules -->
-...
-<!-- END:nextjs-agent-rules -->
-```
-
-I would **leave that block untouched**. Next.js is telling you it may regenerate it when `next dev` runs anyway.
-
-What I would do is put our own TRACKED instructions **above that generated section**. That way Codex gets both:
-
-1. Our permanent rules for TRACKED.
-2. Next.js's version-specific rules.
-
-I’d change your `AGENTS.md` to something like this:
-
 # TRACKED Agent Instructions
 
 TRACKED is a personal command center for managing finances, tasks, goals, calendar items, and household responsibilities.

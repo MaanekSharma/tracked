@@ -117,6 +117,16 @@ describe("calendar editor conversion", () => {
       recurrence_count: null,
     });
   });
+
+  it("requires at least one weekday for weekly editor writes", () => {
+    expect(() => buildCalendarEventWrite({
+      title: "Review",
+      startDate: "2026-08-10",
+      allDay: true,
+      recurrence: "weekly",
+      recurrenceDaysOfWeek: [],
+    }, timeZone)).toThrow(/at least one weekday/i);
+  });
 });
 
 describe("native event move and resize planning", () => {

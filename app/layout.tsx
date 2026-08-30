@@ -25,8 +25,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html
       lang="en"
-      suppressHydrationWarning
-      className={`${manrope.variable} ${mono.variable} h-full antialiased`}
+      className={`${manrope.variable} ${mono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
         <AppProviders>{children}</AppProviders>

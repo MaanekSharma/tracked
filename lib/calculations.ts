@@ -1,5 +1,9 @@
 import { addDays, addMonths, addWeeks, addYears, compareAsc, isBefore, parseISO } from "date-fns";
-import { calendarItemDateKey, normalizeRecurrenceAlias } from "@/lib/calendar-recurrence";
+import {
+  calendarItemDateKey,
+  normalizeRecurrenceAlias,
+  normalizeRecurrenceWeekdays,
+} from "@/lib/calendar-recurrence";
 import type {
   Account,
   BillingFrequency,
@@ -334,14 +338,38 @@ export function normalizeSubscriptionCost(subscription: Pick<Subscription, "amou
   };
 }
 
-export function getNextRecurrenceDate(fromDate: Date, recurrence: Recurrence, interval = 1) {
+function startOfSundayWeekDate(date: Date) {
+  const result = new Date(date);
+  result.setDate(result.getDate() - result.getDay());
+  return result;
+}
+
+function getNextWeeklyRecurrenceDate(fromDate: Date, intervalWeeks: number, recurrenceDaysOfWeek?: readonly number[] | null) {
+  const selected = normalizeRecurrenceWeekdays(recurrenceDaysOfWeek);
+  const weekdays = selected.length ? selected : [fromDate.getDay()];
+  const currentWeekday = fromDate.getDay();
+  const nextSameWeekday = weekdays.find((day) => day > currentWeekday);
+
+  if (nextSameWeekday !== undefined) {
+    return addDays(fromDate, nextSameWeekday - currentWeekday);
+  }
+
+  return addDays(addWeeks(startOfSundayWeekDate(fromDate), intervalWeeks), weekdays[0] ?? currentWeekday);
+}
+
+export function getNextRecurrenceDate(
+  fromDate: Date,
+  recurrence: Recurrence,
+  interval = 1,
+  recurrenceDaysOfWeek?: readonly number[] | null,
+) {
   const rule = normalizeRecurrenceAlias(recurrence, interval);
 
   switch (rule.recurrence) {
     case "daily":
       return addDays(fromDate, rule.recurrenceInterval);
     case "weekly":
-      return addWeeks(fromDate, rule.recurrenceInterval);
+      return getNextWeeklyRecurrenceDate(fromDate, rule.recurrenceInterval, recurrenceDaysOfWeek);
     case "monthly":
       return addMonths(fromDate, rule.recurrenceInterval);
     case "quarterly":

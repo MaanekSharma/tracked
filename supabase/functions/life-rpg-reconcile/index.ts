@@ -177,7 +177,6 @@ function recurrenceDates(event: CalendarRow, from: string, to: string) {
         ordinal += 1;
       }
     }
-    if (!dates.includes(anchor) && anchor >= from && anchor <= end && (event.recurrence_count === null || event.recurrence_count > 0)) dates.unshift(anchor);
     return [...new Set(dates)].sort();
   }
 

@@ -3,6 +3,7 @@ import {
   calendarDateKey,
   dateTimeLocalToIso,
   expandRecurringItems,
+  normalizeRecurrenceWeekdays,
   normalizeRecurrenceAlias,
 } from "@/lib/calendar-recurrence";
 import type { CalendarEventRecurrence, CalendarItem, CalendarSourceType } from "@/types/domain";
@@ -398,9 +399,13 @@ export function buildCalendarEventWrite(
     }
   }
 
-  const weekdays = [...new Set(input.recurrenceDaysOfWeek ?? [])].sort((a, b) => a - b);
-  if (weekdays.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
+  const providedWeekdays = input.recurrenceDaysOfWeek ?? [];
+  const weekdays = normalizeRecurrenceWeekdays(providedWeekdays);
+  if (providedWeekdays.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
     throw new Error("Recurrence weekdays must be between Sunday and Saturday.");
+  }
+  if (recurring && normalized.recurrence === "weekly" && weekdays.length === 0) {
+    throw new Error("Choose at least one weekday for weekly events.");
   }
 
   return {
@@ -413,7 +418,7 @@ export function buildCalendarEventWrite(
     category: nullableText(input.category),
     recurrence: normalized.recurrence as Exclude<CalendarEventRecurrence, "biweekly">,
     recurrence_interval: recurring ? normalized.recurrenceInterval : 1,
-    recurrence_days_of_week: recurring && normalized.recurrence === "weekly" && weekdays.length ? weekdays : null,
+    recurrence_days_of_week: recurring && normalized.recurrence === "weekly" ? weekdays : null,
     recurrence_end_date: recurring ? recurrenceEndDate : null,
     recurrence_count: recurring ? (input.recurrenceCount ?? null) : null,
     timezone: timeZone,

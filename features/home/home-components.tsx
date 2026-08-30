@@ -30,7 +30,13 @@ export function ChoreManager({ chores }: { chores: Chore[] }) {
           <FormGrid>
             <TextField label="Title" name="title" required />
             <TextField label="Room / Category" name="room" />
-            <CalendarRecurrenceFields name="frequency" label="Frequency" recurrence="weekly" />
+            <CalendarRecurrenceFields
+              name="frequency"
+              label="Frequency"
+              recurrence="weekly"
+              anchorDate={todayISO()}
+              anchorFieldName="next_due_date"
+            />
             <TextField label="Next due" name="next_due_date" type="date" defaultValue={todayISO()} />
             <SelectField label="Status" name="status" defaultValue="active" options={statusOptions} />
           </FormGrid>
@@ -67,6 +73,8 @@ export function ChoreManager({ chores }: { chores: Chore[] }) {
                       weekdays={chore.recurrence_days_of_week}
                       endDate={chore.recurrence_end_date}
                       count={chore.recurrence_count}
+                      anchorDate={chore.next_due_date}
+                      anchorFieldName="next_due_date"
                     />
                     <TextField label="Next due" name="next_due_date" type="date" defaultValue={chore.next_due_date} />
                     <TextField label="Last completed" name="last_completed_date" type="date" defaultValue={chore.last_completed_date} />

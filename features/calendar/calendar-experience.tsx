@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -38,8 +39,8 @@ import {
   Repeat2,
   Sparkles,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import { toast } from "sonner";
+import { useTheme } from "@/components/providers/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
   CalendarEventDialog,
@@ -79,6 +80,18 @@ const viewNames: Record<CalendarView, string> = {
   week: "timeGridWeek",
   day: "timeGridDay",
 };
+
+function subscribeToClientMount() {
+  return () => {};
+}
+
+function clientMountedSnapshot() {
+  return true;
+}
+
+function serverMountedSnapshot() {
+  return false;
+}
 
 const sourceIcons = {
   event: CalendarDays,
@@ -147,6 +160,11 @@ export function CalendarExperience({
   const { resolvedTheme } = useTheme();
   const [activeView, setActiveView] = useState<CalendarView>(initialView);
   const [title, setTitle] = useState("");
+  const isCalendarMounted = useSyncExternalStore(
+    subscribeToClientMount,
+    clientMountedSnapshot,
+    serverMountedSnapshot,
+  );
   const [isMobile, setIsMobile] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [mutationPending, setMutationPending] = useState(false);
@@ -181,6 +199,7 @@ export function CalendarExperience({
   }, []);
 
   useEffect(() => {
+    if (!isCalendarMounted) return;
     const api = calendarRef.current?.getApi();
     if (!api) return;
     const hasUrlPreference = searchParams.has("view");
@@ -189,7 +208,7 @@ export function CalendarExperience({
     let preferred = hasUrlPreference ? initialView : validSaved ?? initialView;
     if (window.matchMedia("(max-width: 767px)").matches && preferred === "week") preferred = "day";
     if (api.view.type !== viewNames[preferred]) api.changeView(viewNames[preferred]);
-  }, [initialView, searchParams]);
+  }, [initialView, isCalendarMounted, searchParams]);
 
   const syncUrl = useCallback((view: CalendarView, date: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -483,7 +502,8 @@ export function CalendarExperience({
       </header>
 
       <div className="tracked-calendar p-2 sm:p-3" data-color-scheme={colorScheme}>
-        <FullCalendar
+        {isCalendarMounted ? (
+          <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, classicThemePlugin]}
           initialView={viewNames[initialView]}
@@ -560,7 +580,10 @@ export function CalendarExperience({
               <p className="text-xs">Click or drag on the calendar to make time.</p>
             </div>
           )}
-        />
+          />
+        ) : (
+          <div className="tracked-calendar-placeholder" aria-label="Loading calendar" aria-busy="true" />
+        )}
       </div>
 
       {eventDialog ? (

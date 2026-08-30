@@ -31,36 +31,26 @@ import {
   deleteInteractiveCalendarEventAction,
   updateInteractiveCalendarEventAction,
 } from "@/features/calendar/actions";
+import { WeekdaySelector } from "@/features/calendar/calendar-form-fields";
 import type { CalendarCreateDraft, CalendarUiEventExtendedProps } from "@/lib/calendar-ui";
+import {
+  RECURRENCE_PRESET_OPTIONS,
+  recurrenceFieldsFromPreset,
+  recurrencePresetFromFields,
+  recurrenceUnitLabel,
+  weekdayFromDateInput,
+  type RecurrencePresetValue,
+} from "@/lib/calendar-recurrence-controls";
 import {
   calendarDateKey,
   dateTimeLocalInputValue,
   DEFAULT_CALENDAR_TIME_ZONE,
+  normalizeRecurrenceWeekdays,
 } from "@/lib/calendar-recurrence";
 import type { CalendarEventEditorInput } from "@/lib/calendar-interactions";
 import { CALENDAR_CATEGORY_OPTIONS } from "@/lib/life-rpg";
 import { cn, money } from "@/lib/utils";
 import type { Bill, CalendarEvent, Chore, Task } from "@/types/domain";
-
-const recurrenceOptions = [
-  { value: "none", label: "Does not repeat" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "biweekly", label: "Every 2 weeks" },
-  { value: "monthly", label: "Monthly" },
-  { value: "quarterly", label: "Quarterly" },
-  { value: "yearly", label: "Yearly" },
-] as const;
-
-const weekdayOptions = [
-  { value: 0, label: "S" },
-  { value: 1, label: "M" },
-  { value: 2, label: "T" },
-  { value: 3, label: "W" },
-  { value: 4, label: "T" },
-  { value: 5, label: "F" },
-  { value: 6, label: "S" },
-];
 
 type EventDialogState =
   | { mode: "create"; draft: CalendarCreateDraft }
@@ -77,6 +67,10 @@ function splitLocalDateTime(value: string | null, timeZone: string) {
 
 function mutationErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The calendar could not reach the server.";
+}
+
+function isWeeklyPreset(value: RecurrencePresetValue) {
+  return value === "weekdays" || value === "weekly" || value === "biweekly";
 }
 
 function initialEditorInput(state: Exclude<EventDialogState, null>, timeZone: string): CalendarEventEditorInput {
@@ -121,6 +115,18 @@ function initialEditorInput(state: Exclude<EventDialogState, null>, timeZone: st
   };
 }
 
+function applyAutomaticWeekday(
+  input: CalendarEventEditorInput,
+  weekdaysManuallyChanged: boolean,
+): CalendarEventEditorInput {
+  if (weekdaysManuallyChanged) return input;
+  const preset = recurrencePresetFromFields(input.recurrence, input.recurrenceInterval, input.recurrenceDaysOfWeek);
+  if (!isWeeklyPreset(preset) || input.recurrenceDaysOfWeek?.length) return input;
+
+  const weekday = weekdayFromDateInput(input.startDate);
+  return weekday === null ? input : { ...input, recurrenceDaysOfWeek: [weekday] };
+}
+
 function Field({
   label,
   children,
@@ -148,7 +154,12 @@ export function CalendarEventDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [values, setValues] = useState<CalendarEventEditorInput>(() => initialEditorInput(state, timeZone));
+  const [weekdaysManuallyChanged, setWeekdaysManuallyChanged] = useState(
+    () => state.mode === "edit" && Boolean(state.event.recurrence_days_of_week?.length),
+  );
+  const [values, setValues] = useState<CalendarEventEditorInput>(() => (
+    applyAutomaticWeekday(initialEditorInput(state, timeZone), weekdaysManuallyChanged)
+  ));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -164,10 +175,44 @@ export function CalendarEventDialog({
   const currentState = state;
 
   const storedRecurring = currentState.mode === "edit" && currentState.event.recurrence !== "none";
-  const selectedWeekdays = new Set(values.recurrenceDaysOfWeek ?? []);
+  const recurrencePreset = recurrencePresetFromFields(values.recurrence, values.recurrenceInterval, values.recurrenceDaysOfWeek);
+  const selectedWeekdays = normalizeRecurrenceWeekdays(values.recurrenceDaysOfWeek);
+  const isWeeklyRecurrence = isWeeklyPreset(recurrencePreset);
 
   function update<K extends keyof CalendarEventEditorInput>(key: K, value: CalendarEventEditorInput[K]) {
     setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  function changeStartDate(startDate: string) {
+    setValues((current) => {
+      const next = { ...current, startDate };
+      if (weekdaysManuallyChanged || !isWeeklyPreset(recurrencePresetFromFields(current.recurrence, current.recurrenceInterval, current.recurrenceDaysOfWeek))) {
+        return next;
+      }
+      const weekday = weekdayFromDateInput(startDate);
+      return weekday === null ? next : { ...next, recurrenceDaysOfWeek: [weekday] };
+    });
+  }
+
+  function changeRecurrencePreset(preset: RecurrencePresetValue) {
+    setValues((current) => {
+      const next = recurrenceFieldsFromPreset(preset, {
+        anchorDate: current.startDate,
+        currentWeekdays: current.recurrenceDaysOfWeek,
+      });
+      return {
+        ...current,
+        recurrence: next.recurrence,
+        recurrenceInterval: next.recurrenceInterval,
+        recurrenceDaysOfWeek: next.recurrenceDaysOfWeek,
+      };
+    });
+    setWeekdaysManuallyChanged((current) => preset === "weekdays" || (current && isWeeklyPreset(preset)));
+  }
+
+  function changeWeekdays(nextWeekdays: number[]) {
+    update("recurrenceDaysOfWeek", nextWeekdays);
+    setWeekdaysManuallyChanged(true);
   }
 
   function toggleAllDay(checked: boolean) {
@@ -182,8 +227,16 @@ export function CalendarEventDialog({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
     setError(null);
+
+    if (isWeeklyRecurrence && selectedWeekdays.length === 0) {
+      const message = "Choose at least one weekday for weekly events.";
+      setError(message);
+      toast.error("Calendar change failed", { description: message });
+      return;
+    }
+
+    setPending(true);
 
     try {
       const result = currentState.mode === "create"
@@ -240,9 +293,9 @@ export function CalendarEventDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl overflow-hidden p-0">
-        <form onSubmit={submit}>
-          <DialogHeader className="border-b bg-muted/35 px-5 py-4 pr-12">
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-3xl gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)]">
+        <form onSubmit={submit} className="flex min-h-0 w-full flex-col">
+          <DialogHeader className="shrink-0 border-b bg-muted/35 px-5 py-4 pr-12">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-primary">
               <CalendarClock className="size-3.5" />
               {state.mode === "create" ? "New schedule" : storedRecurring ? "Event series" : "Calendar event"}
@@ -255,7 +308,7 @@ export function CalendarEventDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[calc(90vh-9rem)] space-y-5 overflow-y-auto px-5 py-5">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
             <Field label="Title">
               <Input
                 autoFocus
@@ -298,7 +351,7 @@ export function CalendarEventDialog({
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Start date">
-                <Input type="date" required value={values.startDate} onChange={(event) => update("startDate", event.target.value)} />
+                <Input type="date" required value={values.startDate} onChange={(event) => changeStartDate(event.target.value)} />
               </Field>
               <Field label="End date">
                 <Input
@@ -332,11 +385,11 @@ export function CalendarEventDialog({
                 </Field>
                 <Field label="Repeats">
                   <select
-                    value={values.recurrence ?? "none"}
-                    onChange={(event) => update("recurrence", event.target.value as CalendarEventEditorInput["recurrence"])}
+                    value={recurrencePreset}
+                    onChange={(event) => changeRecurrencePreset(event.target.value as RecurrencePresetValue)}
                     className="h-10 rounded-md border bg-background px-3 text-sm"
                   >
-                    {recurrenceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    {RECURRENCE_PRESET_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </Field>
                 {(values.recurrence ?? "none") !== "none" ? (
@@ -349,7 +402,7 @@ export function CalendarEventDialog({
                           value={values.recurrenceInterval ?? 1}
                           onChange={(event) => update("recurrenceInterval", Number(event.target.value))}
                         />
-                        <span className="text-xs text-muted-foreground">interval(s)</span>
+                        <span className="text-xs text-muted-foreground">{recurrenceUnitLabel(values.recurrence)}</span>
                       </div>
                     </Field>
                     <Field label="Ends on">
@@ -368,34 +421,12 @@ export function CalendarEventDialog({
                         onChange={(event) => update("recurrenceCount", event.target.value ? Number(event.target.value) : null)}
                       />
                     </Field>
-                    {(values.recurrence === "weekly" || values.recurrence === "biweekly") ? (
-                      <fieldset className="sm:col-span-2">
-                        <Label>Weekdays</Label>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {weekdayOptions.map((day) => {
-                            const selected = selectedWeekdays.has(day.value);
-                            return (
-                              <button
-                                key={day.value}
-                                type="button"
-                                aria-pressed={selected}
-                                onClick={() => update(
-                                  "recurrenceDaysOfWeek",
-                                  selected
-                                    ? [...selectedWeekdays].filter((value) => value !== day.value)
-                                    : [...selectedWeekdays, day.value].sort(),
-                                )}
-                                className={cn(
-                                  "size-9 rounded-full border text-xs font-bold transition-colors",
-                                  selected ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-accent",
-                                )}
-                              >
-                                {day.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </fieldset>
+                    {isWeeklyRecurrence ? (
+                      <WeekdaySelector
+                        selected={selectedWeekdays}
+                        onChange={changeWeekdays}
+                        showValidation
+                      />
                     ) : null}
                   </>
                 ) : null}
@@ -425,7 +456,7 @@ export function CalendarEventDialog({
             ) : null}
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t bg-muted/25 px-5 py-4">
+          <div className="flex shrink-0 flex-col gap-3 border-t bg-popover/95 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               {state.mode === "edit" && !confirmDelete ? (
                 <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => setConfirmDelete(true)}>
@@ -433,7 +464,7 @@ export function CalendarEventDialog({
                 </Button>
               ) : null}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
               <Button type="submit" disabled={pending}>{pending ? "Saving…" : state.mode === "create" ? "Add to calendar" : "Save changes"}</Button>
             </div>

@@ -132,7 +132,7 @@ export function EventManager({ events, timeZone = DEFAULT_CALENDAR_TIME_ZONE }: 
             <TextField label="End" name="end_at" type="datetime-local" />
             <TextField label="Location" name="location" />
             <SelectField label="Category" name="category" options={CALENDAR_CATEGORY_OPTIONS} />
-            <CalendarRecurrenceFields />
+            <CalendarRecurrenceFields anchorFieldName="start_at" />
           </FormGrid>
           <CheckboxField label="All day" name="all_day" />
           <TextareaField label="Description" name="description" className="mt-4" />
@@ -179,6 +179,8 @@ export function EventManager({ events, timeZone = DEFAULT_CALENDAR_TIME_ZONE }: 
                       weekdays={event.recurrence_days_of_week}
                       endDate={event.recurrence_end_date}
                       count={event.recurrence_count}
+                      anchorDate={dateTimeLocalInputValue(event.start_at, timeZone)}
+                      anchorFieldName="start_at"
                     />
                   </FormGrid>
                   <div className="mt-4">

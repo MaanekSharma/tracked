@@ -743,7 +743,7 @@ export function BillsManager({
             <TextField label="Next due date" name="next_due_date" type="date" defaultValue={todayISO()} required />
             <SelectField label="Category" name="category_id" options={categoryOptions(categories)} />
             <SelectField label="Pay from" name="account_id" options={accountOptions(accounts)} />
-            <CalendarRecurrenceFields recurrence="monthly" />
+            <CalendarRecurrenceFields recurrence="monthly" anchorDate={todayISO()} anchorFieldName="next_due_date" />
           </FormGrid>
           <div className="mt-4 grid gap-2 sm:grid-cols-3">
             <CheckboxField label="Recurring" name="recurring" defaultChecked />
@@ -786,6 +786,8 @@ export function BillsManager({
                       weekdays={bill.recurrence_days_of_week}
                       endDate={bill.recurrence_end_date}
                       count={bill.recurrence_count}
+                      anchorDate={bill.next_due_date}
+                      anchorFieldName="next_due_date"
                     />
                   </FormGrid>
                   <div className="mt-4 grid gap-2 sm:grid-cols-3">

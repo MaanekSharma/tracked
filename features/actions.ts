@@ -4,7 +4,13 @@ import { format, parseISO } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { calendarDateKey, dateTimeLocalToIso, DEFAULT_CALENDAR_TIME_ZONE, normalizeRecurrenceAlias } from "@/lib/calendar-recurrence";
+import {
+  calendarDateKey,
+  dateTimeLocalToIso,
+  DEFAULT_CALENDAR_TIME_ZONE,
+  normalizeRecurrenceAlias,
+  normalizeRecurrenceWeekdays,
+} from "@/lib/calendar-recurrence";
 import { getNextRecurrenceDate } from "@/lib/calculations";
 import { env } from "@/lib/env";
 import { hasFutureRecurrence } from "@/lib/recurrence-progress";
@@ -120,11 +126,16 @@ function normalizeRecurrenceFields(
   const normalized = normalizeRecurrenceAlias(input.recurrence, input.recurrence_interval);
   const recurring = normalized.recurrence !== "none";
   const weekly = normalized.recurrence === "weekly";
+  const weekdays = normalizeRecurrenceWeekdays(input.recurrence_days_of_week);
+
+  if (recurring && weekly && weekdays.length === 0) {
+    throw new Error(`Choose at least one weekday for weekly ${label}s.`);
+  }
 
   return {
     recurrence: normalized.recurrence,
     recurrence_interval: recurring ? normalized.recurrenceInterval : 1,
-    recurrence_days_of_week: recurring && weekly && input.recurrence_days_of_week.length ? input.recurrence_days_of_week : null,
+    recurrence_days_of_week: recurring && weekly ? weekdays : null,
     recurrence_end_date: recurring ? input.recurrence_end_date : null,
     recurrence_count: recurring ? input.recurrence_count : null,
   };
@@ -684,7 +695,7 @@ export async function markBillPaidAction(formData: FormData) {
       const id = idSchema.parse(text(formData, "id"));
       const { data: bill, error } = await supabase
         .from("bills")
-        .select("id, user_id, amount, next_due_date, recurring, recurrence, recurrence_interval, recurrence_end_date, recurrence_count, account_id")
+        .select("id, user_id, amount, next_due_date, recurring, recurrence, recurrence_interval, recurrence_days_of_week, recurrence_end_date, recurrence_count, account_id")
         .eq("id", id)
         .eq("user_id", userId)
         .single();
@@ -710,7 +721,9 @@ export async function markBillPaidAction(formData: FormData) {
         .select("id", { count: "exact", head: true })
         .eq("bill_id", id)
         .eq("user_id", userId);
-      const next = bill.recurring ? getNextRecurrenceDate(parseISO(bill.next_due_date), bill.recurrence, bill.recurrence_interval) : null;
+      const next = bill.recurring
+        ? getNextRecurrenceDate(parseISO(bill.next_due_date), bill.recurrence, bill.recurrence_interval, bill.recurrence_days_of_week)
+        : null;
       const nextDate = next ? format(next, "yyyy-MM-dd") : null;
       const active = hasFutureRecurrence({
         nextDate,
@@ -1159,7 +1172,7 @@ export async function completeChoreAction(formData: FormData) {
       const id = idSchema.parse(text(formData, "id"));
       const { data: chore, error } = await supabase
         .from("chores")
-        .select("id, frequency, recurrence_interval, recurrence_end_date, recurrence_count")
+        .select("id, frequency, recurrence_interval, recurrence_days_of_week, recurrence_end_date, recurrence_count")
         .eq("id", id)
         .eq("user_id", userId)
         .single();
@@ -1179,7 +1192,7 @@ export async function completeChoreAction(formData: FormData) {
         .select("id", { count: "exact", head: true })
         .eq("chore_id", id)
         .eq("user_id", userId);
-      const next = getNextRecurrenceDate(completed, chore.frequency, chore.recurrence_interval);
+      const next = getNextRecurrenceDate(completed, chore.frequency, chore.recurrence_interval, chore.recurrence_days_of_week);
       const nextDate = next ? format(next, "yyyy-MM-dd") : null;
       const active = hasFutureRecurrence({
         nextDate,

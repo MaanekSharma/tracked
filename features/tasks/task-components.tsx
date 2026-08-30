@@ -59,7 +59,7 @@ export function TaskManager({ tasks, view }: { tasks: Task[]; view: string }) {
             <TextField label="Due time" name="due_time" type="time" />
             <SelectField label="RPG stat" name="rpg_category" options={OPTIONAL_RPG_CATEGORY_OPTIONS} />
             <SelectField label="Difficulty" name="rpg_difficulty" defaultValue="medium" options={RPG_DIFFICULTY_OPTIONS} />
-            <CalendarRecurrenceFields />
+            <CalendarRecurrenceFields anchorDate={view === "today" ? todayISO() : undefined} anchorFieldName="due_date" />
             <SelectField label="Status" name="status" defaultValue="open" options={statusOptions} />
           </FormGrid>
           <TextareaField label="Description" name="description" className="mt-4" />
@@ -100,6 +100,8 @@ export function TaskManager({ tasks, view }: { tasks: Task[]; view: string }) {
                       weekdays={task.recurrence_days_of_week}
                       endDate={task.recurrence_end_date}
                       count={task.recurrence_count}
+                      anchorDate={task.due_date}
+                      anchorFieldName="due_date"
                     />
                     <SelectField label="Status" name="status" defaultValue={task.status} options={statusOptions} />
                   </FormGrid>

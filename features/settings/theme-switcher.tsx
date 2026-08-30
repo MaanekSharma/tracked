@@ -1,14 +1,14 @@
 "use client";
 
 import { Monitor, Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { useTheme, type Theme } from "@/components/providers/theme-provider";
 
 const items = [
   { value: "dark", label: "Dark", icon: Moon },
   { value: "light", label: "Light", icon: Sun },
   { value: "system", label: "System", icon: Monitor },
-];
+] satisfies { value: Theme; label: string; icon: typeof Moon }[];
 
 export function ThemeSwitcher() {
   const { theme, setTheme } = useTheme();
