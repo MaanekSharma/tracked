@@ -4,8 +4,8 @@ import { getNextRecurrenceDate } from "@/lib/calculations";
 import { hasFutureRecurrence } from "@/lib/recurrence-progress";
 import type { Recurrence } from "@/types/domain";
 
-function nextDate(from: string, recurrence: Recurrence, interval = 1) {
-  const next = getNextRecurrenceDate(parseISO(from), recurrence, interval);
+function nextDate(from: string, recurrence: Recurrence, interval = 1, weekdays?: number[] | null) {
+  const next = getNextRecurrenceDate(parseISO(from), recurrence, interval, weekdays);
   return next ? format(next, "yyyy-MM-dd") : null;
 }
 
@@ -42,5 +42,15 @@ describe("bill and chore recurrence progression", () => {
   it("honors recurrence intervals when calculating next dates", () => {
     expect(nextDate("2026-01-01", "weekly", 2)).toBe("2026-01-15");
     expect(nextDate("2026-01-01", "monthly", 2)).toBe("2026-03-01");
+  });
+
+  it("advances weekly schedules across multiple selected weekdays", () => {
+    expect(nextDate("2026-01-06", "weekly", 1, [2, 4])).toBe("2026-01-08");
+    expect(nextDate("2026-01-08", "weekly", 1, [2, 4])).toBe("2026-01-13");
+  });
+
+  it("advances every two weeks with multiple selected weekdays", () => {
+    expect(nextDate("2026-01-05", "weekly", 2, [1, 3])).toBe("2026-01-07");
+    expect(nextDate("2026-01-07", "weekly", 2, [1, 3])).toBe("2026-01-19");
   });
 });

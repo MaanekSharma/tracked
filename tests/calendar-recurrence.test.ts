@@ -74,6 +74,165 @@ describe("expandRecurringItems", () => {
     expect(occurrenceDates(items)).toEqual(["2026-01-05", "2026-01-07", "2026-01-09", "2026-01-12"]);
   });
 
+  it("generates weekly Tuesday and Thursday occurrences without forcing an unselected anchor day", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-01-05T15:00:00.000Z",
+          recurrence: "weekly",
+          recurrenceDaysOfWeek: [2, 4],
+        }),
+      ],
+      "2026-01-05",
+      "2026-01-15",
+    );
+
+    expect(occurrenceDates(items)).toEqual(["2026-01-06", "2026-01-08", "2026-01-13", "2026-01-15"]);
+  });
+
+  it("generates weekly Monday and Thursday occurrences", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-01-05T15:00:00.000Z",
+          recurrence: "weekly",
+          recurrenceDaysOfWeek: [1, 4],
+        }),
+      ],
+      "2026-01-05",
+      "2026-01-15",
+    );
+
+    expect(occurrenceDates(items)).toEqual(["2026-01-05", "2026-01-08", "2026-01-12", "2026-01-15"]);
+  });
+
+  it("generates Monday through Friday occurrences from the weekday preset shape", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-01-01T15:00:00.000Z",
+          recurrence: "weekly",
+          recurrenceDaysOfWeek: [1, 2, 3, 4, 5],
+        }),
+      ],
+      "2026-01-01",
+      "2026-01-09",
+    );
+
+    expect(occurrenceDates(items)).toEqual([
+      "2026-01-01",
+      "2026-01-02",
+      "2026-01-05",
+      "2026-01-06",
+      "2026-01-07",
+      "2026-01-08",
+      "2026-01-09",
+    ]);
+  });
+
+  it("generates every two weeks with multiple selected weekdays", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-01-05T15:00:00.000Z",
+          recurrence: "weekly",
+          recurrenceInterval: 2,
+          recurrenceDaysOfWeek: [1, 3],
+        }),
+      ],
+      "2026-01-05",
+      "2026-02-05",
+    );
+
+    expect(occurrenceDates(items)).toEqual([
+      "2026-01-05",
+      "2026-01-07",
+      "2026-01-19",
+      "2026-01-21",
+      "2026-02-02",
+      "2026-02-04",
+    ]);
+  });
+
+  it("falls back to the start weekday for legacy weekly records without selected weekdays", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-01-06T15:00:00.000Z",
+          recurrence: "weekly",
+          recurrenceDaysOfWeek: null,
+        }),
+      ],
+      "2026-01-06",
+      "2026-01-20",
+    );
+
+    expect(occurrenceDates(items)).toEqual(["2026-01-06", "2026-01-13", "2026-01-20"]);
+  });
+
+  it("honors recurrence end dates and counts with multiple weekdays", () => {
+    const ending = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-01-05T15:00:00.000Z",
+          recurrence: "weekly",
+          recurrenceDaysOfWeek: [1, 4],
+          recurrenceEndDate: "2026-01-12",
+        }),
+      ],
+      "2026-01-01",
+      "2026-01-20",
+    );
+    const counted = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-01-05T15:00:00.000Z",
+          recurrence: "weekly",
+          recurrenceDaysOfWeek: [1, 4],
+          recurrenceCount: 3,
+        }),
+      ],
+      "2026-01-01",
+      "2026-01-20",
+    );
+
+    expect(occurrenceDates(ending)).toEqual(["2026-01-05", "2026-01-08", "2026-01-12"]);
+    expect(occurrenceDates(counted)).toEqual(["2026-01-05", "2026-01-08", "2026-01-12"]);
+  });
+
+  it("does not generate duplicate occurrences from duplicate selected weekdays", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-01-05T15:00:00.000Z",
+          recurrence: "weekly",
+          recurrenceDaysOfWeek: [1, 1, 4, 4],
+        }),
+      ],
+      "2026-01-05",
+      "2026-01-12",
+    );
+
+    expect(occurrenceDates(items)).toEqual(["2026-01-05", "2026-01-08", "2026-01-12"]);
+    expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+  });
+
+  it("generates selected weekdays across month and year boundaries", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2025-12-29T15:00:00.000Z",
+          recurrence: "weekly",
+          recurrenceDaysOfWeek: [1, 3],
+        }),
+      ],
+      "2025-12-29",
+      "2026-01-07",
+    );
+
+    expect(occurrenceDates(items)).toEqual(["2025-12-29", "2025-12-31", "2026-01-05", "2026-01-07"]);
+  });
+
   it("generates occurrences every two weeks for a biweekly recurrence", () => {
     const biweekly = expandRecurringItems(
       [
@@ -208,6 +367,43 @@ describe("expandRecurringItems", () => {
     expect(occurrenceDates(items)).toEqual(["2026-01-01", "2026-01-02", "2026-01-03"]);
   });
 
+  it("includes a multi-day item that starts before the visible range", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-08-10T04:00:00.000Z",
+          endAt: "2026-08-12T04:00:00.000Z",
+          allDay: true,
+        }),
+      ],
+      "2026-08-11",
+      "2026-08-11",
+      DEFAULT_CALENDAR_TIME_ZONE,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.occurrenceDate).toBe("2026-08-10");
+  });
+
+  it("includes a recurring multi-day occurrence that overlaps the range boundary", () => {
+    const items = expandRecurringItems(
+      [
+        calendarItem({
+          startAt: "2026-08-03T04:00:00.000Z",
+          endAt: "2026-08-05T04:00:00.000Z",
+          allDay: true,
+          recurrence: "weekly",
+        }),
+      ],
+      "2026-08-11",
+      "2026-08-11",
+      DEFAULT_CALENDAR_TIME_ZONE,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.occurrenceDate).toBe("2026-08-10");
+  });
+
   it("uses stable unique virtual occurrence IDs for recurring items", () => {
     const items = expandRecurringItems(
       [
@@ -227,6 +423,7 @@ describe("expandRecurringItems", () => {
       "event_calendar-123_2026-01-03",
     ]);
     expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+    expect(items.every((item) => item.seriesStartAt === "2026-01-01T15:00:00.000Z")).toBe(true);
   });
 
   it("keeps near-midnight local times on the intended Toronto calendar day", () => {

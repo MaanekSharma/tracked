@@ -40,6 +40,15 @@ export function createAdminClient(): SupabaseClient {
   });
 }
 
+export function requireServiceActor(req: Request, userId: string): { user: { id: string }; admin: SupabaseClient } {
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const expected = `Bearer ${secretKey()}`;
+  if (authHeader !== expected || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) {
+    throw new HttpError(401, "Invalid internal reconciliation credentials.");
+  }
+  return { user: { id: userId }, admin: createAdminClient() };
+}
+
 export async function requireUser(req: Request): Promise<{ user: User; admin: SupabaseClient }> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) throw new HttpError(401, "Please sign in again before connecting a bank.");

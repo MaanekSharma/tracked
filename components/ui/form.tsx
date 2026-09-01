@@ -86,6 +86,8 @@ export function SelectField({
   options,
   required,
   className,
+  value,
+  onChange,
 }: {
   label: string;
   name: string;
@@ -93,12 +95,16 @@ export function SelectField({
   options: { value: string; label: string }[];
   required?: boolean;
   className?: string;
+  value?: string;
+  onChange?: React.ChangeEventHandler<HTMLSelectElement>;
 }) {
   return (
     <Field label={label} className={className}>
       <select
         name={name}
-        defaultValue={defaultValue ?? ""}
+        defaultValue={value === undefined ? defaultValue ?? "" : undefined}
+        value={value}
+        onChange={onChange}
         required={required}
         className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
       >

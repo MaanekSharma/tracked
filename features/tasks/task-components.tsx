@@ -4,6 +4,7 @@ import { completeTaskAction, createTaskAction, deleteTaskAction, reopenTaskActio
 import { CalendarRecurrenceFields } from "@/features/calendar/calendar-form-fields";
 import { formatDate, todayISO } from "@/lib/utils";
 import { type Task } from "@/types/domain";
+import { OPTIONAL_RPG_CATEGORY_OPTIONS, RPG_DIFFICULTY_OPTIONS } from "@/lib/life-rpg";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,7 +57,9 @@ export function TaskManager({ tasks, view }: { tasks: Task[]; view: string }) {
             <SelectField label="Priority" name="priority" defaultValue="medium" options={priorityOptions} />
             <TextField label="Due date" name="due_date" type="date" defaultValue={view === "today" ? todayISO() : undefined} />
             <TextField label="Due time" name="due_time" type="time" />
-            <CalendarRecurrenceFields />
+            <SelectField label="RPG stat" name="rpg_category" options={OPTIONAL_RPG_CATEGORY_OPTIONS} />
+            <SelectField label="Difficulty" name="rpg_difficulty" defaultValue="medium" options={RPG_DIFFICULTY_OPTIONS} />
+            <CalendarRecurrenceFields anchorDate={view === "today" ? todayISO() : undefined} anchorFieldName="due_date" />
             <SelectField label="Status" name="status" defaultValue="open" options={statusOptions} />
           </FormGrid>
           <TextareaField label="Description" name="description" className="mt-4" />
@@ -89,12 +92,16 @@ export function TaskManager({ tasks, view }: { tasks: Task[]; view: string }) {
                     <SelectField label="Priority" name="priority" defaultValue={task.priority} options={priorityOptions} />
                     <TextField label="Due date" name="due_date" type="date" defaultValue={task.due_date} />
                     <TextField label="Due time" name="due_time" type="time" defaultValue={task.due_time} />
+                    <SelectField label="RPG stat" name="rpg_category" defaultValue={task.rpg_category ?? ""} options={OPTIONAL_RPG_CATEGORY_OPTIONS} />
+                    <SelectField label="Difficulty" name="rpg_difficulty" defaultValue={task.rpg_difficulty} options={RPG_DIFFICULTY_OPTIONS} />
                     <CalendarRecurrenceFields
                       recurrence={task.recurrence}
                       interval={task.recurrence_interval}
                       weekdays={task.recurrence_days_of_week}
                       endDate={task.recurrence_end_date}
                       count={task.recurrence_count}
+                      anchorDate={task.due_date}
+                      anchorFieldName="due_date"
                     />
                     <SelectField label="Status" name="status" defaultValue={task.status} options={statusOptions} />
                   </FormGrid>

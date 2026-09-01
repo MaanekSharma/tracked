@@ -18,11 +18,12 @@ import { CalendarRecurrenceFields } from "@/features/calendar/calendar-form-fiel
 import { calendarDateKey, calendarItemDateKey, dateTimeLocalInputValue, DEFAULT_CALENDAR_TIME_ZONE } from "@/lib/calendar-recurrence";
 import { todayISO } from "@/lib/utils";
 import { calendarEventRecurrenceLabels, type CalendarEvent, type CalendarItem } from "@/types/domain";
+import { CALENDAR_CATEGORY_OPTIONS } from "@/lib/life-rpg";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { CheckboxField, FormGrid, HiddenRedirect, TextField, TextareaField } from "@/components/ui/form";
+import { CheckboxField, FormGrid, HiddenRedirect, SelectField, TextField, TextareaField } from "@/components/ui/form";
 
 function eventDisplayDate(value: string, timeZone: string) {
   return format(parse(calendarDateKey(value, timeZone), "yyyy-MM-dd", new Date()), "MMM d, yyyy");
@@ -130,8 +131,8 @@ export function EventManager({ events, timeZone = DEFAULT_CALENDAR_TIME_ZONE }: 
             <TextField label="Start" name="start_at" type="datetime-local" required />
             <TextField label="End" name="end_at" type="datetime-local" />
             <TextField label="Location" name="location" />
-            <TextField label="Category" name="category" />
-            <CalendarRecurrenceFields />
+            <SelectField label="Category" name="category" options={CALENDAR_CATEGORY_OPTIONS} />
+            <CalendarRecurrenceFields anchorFieldName="start_at" />
           </FormGrid>
           <CheckboxField label="All day" name="all_day" />
           <TextareaField label="Description" name="description" className="mt-4" />
@@ -164,13 +165,22 @@ export function EventManager({ events, timeZone = DEFAULT_CALENDAR_TIME_ZONE }: 
                     <TextField label="Start" name="start_at" type="datetime-local" defaultValue={dateTimeLocalInputValue(event.start_at, timeZone)} required />
                     <TextField label="End" name="end_at" type="datetime-local" defaultValue={dateTimeLocalInputValue(event.end_at, timeZone)} />
                     <TextField label="Location" name="location" defaultValue={event.location} />
-                    <TextField label="Category" name="category" defaultValue={event.category} />
+                    <SelectField
+                      label="Category"
+                      name="category"
+                      defaultValue={event.category?.toLowerCase() ?? ""}
+                      options={event.category && !CALENDAR_CATEGORY_OPTIONS.some((option) => option.value === event.category?.toLowerCase())
+                        ? [...CALENDAR_CATEGORY_OPTIONS, { value: event.category, label: `${event.category} (legacy)` }]
+                        : CALENDAR_CATEGORY_OPTIONS}
+                    />
                     <CalendarRecurrenceFields
                       recurrence={event.recurrence}
                       interval={event.recurrence_interval}
                       weekdays={event.recurrence_days_of_week}
                       endDate={event.recurrence_end_date}
                       count={event.recurrence_count}
+                      anchorDate={dateTimeLocalInputValue(event.start_at, timeZone)}
+                      anchorFieldName="start_at"
                     />
                   </FormGrid>
                   <div className="mt-4">

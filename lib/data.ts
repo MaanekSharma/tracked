@@ -20,8 +20,11 @@ import type {
   Chore,
   Goal,
   GoalUpdate,
+  InvestmentHolding,
+  InvestmentTransaction,
   PlaidItem,
   Profile,
+  RpgQuest,
   Subscription,
   Task,
   Transaction,
@@ -32,6 +35,7 @@ export type MoneyFilters = {
   q?: string;
   type?: string;
   category?: string;
+  account?: string;
 };
 
 export type CalendarItemOptions = {
@@ -85,6 +89,25 @@ export async function getPlaidItems() {
   return (data ?? []) as PlaidItem[];
 }
 
+export async function getInvestmentHoldings() {
+  const { supabase } = await getUserScopedClient();
+  const { data } = await supabase
+    .from("investment_holdings")
+    .select("*, investment_securities!investment_holdings_security_fk(*)")
+    .order("institution_value", { ascending: false });
+  return (data ?? []) as InvestmentHolding[];
+}
+
+export async function getInvestmentTransactions() {
+  const { supabase } = await getUserScopedClient();
+  const { data } = await supabase
+    .from("investment_transactions")
+    .select("*, investment_securities!investment_transactions_security_fk(*)")
+    .order("transaction_date", { ascending: false })
+    .limit(100);
+  return (data ?? []) as InvestmentTransaction[];
+}
+
 export async function getCurrentBudgets(date = new Date()) {
   const { supabase } = await getUserScopedClient();
   const monthStart = format(startOfMonth(date), "yyyy-MM-dd");
@@ -96,7 +119,11 @@ export async function getCurrentBudgets(date = new Date()) {
   return (data ?? []) as Budget[];
 }
 
-export async function getTransactions(filters: MoneyFilters = {}, dateRange?: { from: string; to: string }) {
+export async function getTransactions(
+  filters: MoneyFilters = {},
+  dateRange?: { from: string; to: string },
+  limit = 100,
+) {
   const { supabase } = await getUserScopedClient();
   let query = supabase
     .from("transactions")
@@ -105,13 +132,16 @@ export async function getTransactions(filters: MoneyFilters = {}, dateRange?: { 
     )
     .order("transaction_date", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(limit);
 
   if (filters.type && ["income", "expense", "transfer"].includes(filters.type)) {
     query = query.eq("type", filters.type);
   }
   if (filters.category) {
     query = query.eq("category_id", filters.category);
+  }
+  if (filters.account) {
+    query = query.eq("account_id", filters.account);
   }
   if (filters.q) {
     const escaped = filters.q.replaceAll("%", "").replaceAll("_", "");
@@ -136,6 +166,7 @@ export async function getMonthlyTransactions(date = new Date()) {
       from: format(startOfMonth(date), "yyyy-MM-dd"),
       to: format(endOfMonth(date), "yyyy-MM-dd"),
     },
+    1000,
   );
 }
 
@@ -197,6 +228,19 @@ export async function getGoalUpdates(goalId?: string) {
   return (data ?? []) as GoalUpdate[];
 }
 
+export async function getRpgQuests(includeInactive = true) {
+  const { supabase } = await getUserScopedClient();
+  let query = supabase
+    .from("rpg_quests")
+    .select("*, rpg_quest_objectives(*)")
+    .order("status")
+    .order("ends_on", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false });
+  if (!includeInactive) query = query.eq("status", "active");
+  const { data } = await query;
+  return (data ?? []) as RpgQuest[];
+}
+
 export async function getCalendarEvents(range?: { from: string; to: string }) {
   const { supabase } = await getUserScopedClient();
   let query = supabase.from("calendar_events").select("*").order("start_at", { ascending: true });
@@ -233,6 +277,7 @@ export function normalizeEventForCalendar(event: CalendarEvent): CalendarItem {
     startAt: event.start_at,
     endAt: event.end_at,
     allDay: event.all_day,
+    scheduleEditable: true,
     detail: event.location ?? event.category ?? undefined,
     recurrence: event.recurrence ?? "none",
     recurrenceInterval: recurrenceInterval(event.recurrence_interval),
@@ -252,6 +297,7 @@ export function normalizeBillForCalendar(bill: Bill, timeZone = DEFAULT_CALENDAR
     startAt: dayStartAt(bill.next_due_date, timeZone),
     endAt: null,
     allDay: true,
+    scheduleEditable: bill.active,
     detail: money(bill.amount, true),
     recurrence: bill.recurring ? bill.recurrence : "none",
     recurrenceInterval: recurrenceInterval(bill.recurrence_interval),
@@ -273,6 +319,7 @@ export function normalizeTaskForCalendar(task: Task, timeZone = DEFAULT_CALENDAR
     startAt: dateTimeLocalToIso(`${task.due_date}T${task.due_time ?? "00:00"}`, timeZone),
     endAt: null,
     allDay: !task.due_time,
+    scheduleEditable: task.status === "open",
     detail: `${task.priority} priority`,
     recurrence: task.recurrence ?? "none",
     recurrenceInterval: recurrenceInterval(task.recurrence_interval),
@@ -294,6 +341,7 @@ export function normalizeChoreForCalendar(chore: Chore, timeZone = DEFAULT_CALEN
     startAt: dayStartAt(chore.next_due_date, timeZone),
     endAt: null,
     allDay: true,
+    scheduleEditable: chore.status === "active",
     detail: chore.room ?? "Chore due",
     recurrence: chore.frequency ?? "none",
     recurrenceInterval: recurrenceInterval(chore.recurrence_interval),

@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Manrope, Roboto_Mono } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
+import "@fullcalendar/react/skeleton.css";
+import "@fullcalendar/react/themes/classic/theme.css";
+import "@fullcalendar/react/themes/classic/palette.css";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -22,8 +25,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html
       lang="en"
-      suppressHydrationWarning
-      className={`${manrope.variable} ${mono.variable} h-full antialiased`}
+      className={`${manrope.variable} ${mono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
         <AppProviders>{children}</AppProviders>

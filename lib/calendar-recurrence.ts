@@ -81,6 +81,15 @@ function weekday(value: string) {
   return utcDateFromKey(value).getUTCDay();
 }
 
+export function weekdayForDateKey(value: string) {
+  return weekday(value);
+}
+
+export function normalizeRecurrenceWeekdays(weekdays: readonly number[] | null | undefined) {
+  const selected = weekdays?.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6) ?? [];
+  return [...new Set(selected)].sort((a, b) => a - b);
+}
+
 function startOfWeek(value: string) {
   return addDaysToDateKey(value, -weekday(value));
 }
@@ -236,9 +245,22 @@ function withOccurrence(item: CalendarItem, occurrenceDate: string, timeZone: st
     startAt,
     endAt: occurrenceEndAt(item, startAt),
     seriesId: item.sourceId,
+    seriesStartAt: item.seriesStartAt ?? item.startAt,
+    seriesEndAt: item.seriesEndAt ?? item.endAt,
     occurrenceDate,
     isVirtualOccurrence: true,
   };
+}
+
+function calendarItemOverlapsRange(
+  item: CalendarItem,
+  rangeStart: string,
+  rangeEnd: string,
+  timeZone: string,
+) {
+  const itemStart = calendarItemDateKey(item, timeZone);
+  const itemEnd = item.endAt ? calendarDateKey(item.endAt, timeZone) : itemStart;
+  return itemStart <= rangeEnd && itemEnd >= rangeStart;
 }
 
 function normalizeRecurrence(item: CalendarItem) {
@@ -250,8 +272,8 @@ function normalizeInterval(item: CalendarItem) {
 }
 
 function normalizeWeekdays(item: CalendarItem, anchorDate: string) {
-  const selected = item.recurrenceDaysOfWeek?.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6) ?? [];
-  return selected.length ? [...new Set(selected)].sort((a, b) => a - b) : [weekday(anchorDate)];
+  const selected = normalizeRecurrenceWeekdays(item.recurrenceDaysOfWeek);
+  return selected.length ? selected : [weekday(anchorDate)];
 }
 
 function effectiveEndDate(item: CalendarItem, rangeEnd: string) {
@@ -266,9 +288,8 @@ function pushIfInRange(
   rangeEnd: string,
   timeZone: string,
 ) {
-  if (occurrenceDate >= rangeStart && occurrenceDate <= rangeEnd) {
-    occurrences.push(withOccurrence(item, occurrenceDate, timeZone));
-  }
+  const occurrence = withOccurrence(item, occurrenceDate, timeZone);
+  if (calendarItemOverlapsRange(occurrence, rangeStart, rangeEnd, timeZone)) occurrences.push(occurrence);
 }
 
 function expandDaily(item: CalendarItem, anchorDate: string, rangeStart: string, rangeEnd: string, timeZone: string) {
@@ -295,12 +316,11 @@ function expandWeekly(item: CalendarItem, anchorDate: string, rangeStart: string
   let occurrenceIndex = 0;
 
   for (let current = anchorDate; current <= endDate; current = addDaysToDateKey(current, 1)) {
-    const isAnchorDate = current === anchorDate;
     const weekDistance = daysBetween(anchorWeekStart, startOfWeek(current)) / 7;
     const inInterval = weekDistance % intervalWeeks === 0;
     const onSelectedDay = selectedWeekdays.includes(weekday(current));
 
-    if (isAnchorDate || (inInterval && onSelectedDay)) {
+    if (inInterval && onSelectedDay) {
       if (count !== null && occurrenceIndex >= count) break;
       pushIfInRange(occurrences, item, current, rangeStart, rangeEnd, timeZone);
       occurrenceIndex += 1;
@@ -361,7 +381,8 @@ export function expandRecurringItems(
       const anchorDate = calendarDateKey(item.startAt, normalizedTimeZone);
 
       if (recurrence === "none" || recurrence === null) {
-        return anchorDate >= from && anchorDate <= to ? [withOccurrence(item, anchorDate, normalizedTimeZone)] : [];
+        const occurrence = withOccurrence(item, anchorDate, normalizedTimeZone);
+        return calendarItemOverlapsRange(occurrence, from, to, normalizedTimeZone) ? [occurrence] : [];
       }
 
       if (anchorDate > to) return [];

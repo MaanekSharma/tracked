@@ -88,7 +88,7 @@ function chore(overrides: Partial<Chore> = {}): Chore {
     description: null,
     frequency: "weekly",
     recurrence_interval: 1,
-    recurrence_days_of_week: [6],
+    recurrence_days_of_week: [0],
     recurrence_end_date: null,
     recurrence_count: null,
     next_due_date: "2026-01-04",
@@ -170,9 +170,18 @@ describe("calendar source normalization", () => {
       detail: "Living room",
       recurrence: "weekly",
       recurrenceInterval: 1,
-      recurrenceDaysOfWeek: [6],
+      recurrenceDaysOfWeek: [0],
     });
     expect(calendarDateKey(item?.startAt ?? "", DEFAULT_CALENDAR_TIME_ZONE)).toBe("2026-01-04");
+  });
+
+  it("marks paused chores as visible schedule details rather than movable items", () => {
+    const item = normalizeChoreForCalendar(chore({ status: "paused" }), DEFAULT_CALENDAR_TIME_ZONE);
+
+    expect(item).toMatchObject({
+      sourceType: "chore",
+      scheduleEditable: false,
+    });
   });
 });
 

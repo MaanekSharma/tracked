@@ -11,18 +11,18 @@ The V1 app is built with Next.js App Router, TypeScript, Tailwind CSS, shadcn-st
 - Row Level Security on every user-owned table.
 - Default budget category seeding for new users.
 - Responsive authenticated shell with TRACKED branding, sidebar/mobile navigation, theme support, and global quick add.
-- Overview dashboard with real-data financial summary, today's tasks, upcoming items, budget snapshot, goals, and home attention.
+- LIFE RPG character dashboard at `/overview`, with Level 24 baseline progression, seven evidence-backed stats, quests, effects, weekly reports, achievements, Today, and compact money context.
 - Money module for accounts, transactions, categories, monthly budgets, bills, and subscriptions.
 - Plaid Sandbox bank/credit-card sync for Canadian Transactions through Supabase Edge Functions.
 - Tasks module with Inbox, Today, Upcoming, and Completed views.
-- Goals module with measurable progress and history.
+- Goals module with measurable progress and history plus Daily, Weekly, and Main quests under the same destination.
 - Internal calendar combining native events, task due dates, bill due dates, and chore due dates.
 - Home module for active bills requiring attention and recurring chores.
 - Settings for display name, CAD preference, timezone, theme, and savings-rate target.
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 24.x (pinned in `.nvmrc` and `.node-version`)
 - npm
 - Supabase project
 - Supabase CLI if you want to run migrations from your machine
@@ -54,8 +54,10 @@ Configure server-only Plaid values as Supabase Edge Function secrets, not as `NE
 ```bash
 PLAID_CLIENT_ID=
 PLAID_SECRET=
-PLAID_ENV=sandbox
+PLAID_ENV=production
 PLAID_WEBHOOK_URL=https://YOUR_PROJECT_REF.supabase.co/functions/v1/plaid-webhook
+# Leave PLAID_REDIRECT_URI unset for local desktop-web testing.
+# Set it only to a real, allowlisted HTTPS URL after deploying the frontend.
 ```
 
 Hosted Supabase Edge Functions provide server-side Supabase credentials automatically. Never expose or commit Plaid secrets, Plaid access tokens, or Supabase secret/service-role keys.
@@ -67,7 +69,7 @@ Hosted Supabase Edge Functions provide server-side Supabase credentials automati
 3. Add redirect URLs:
    - `http://localhost:3000/reset-password`
    - your Vercel production URL plus `/reset-password`
-4. Run the migration in `supabase/migrations/20260808000000_initial_tracked_schema.sql`.
+4. Apply every migration in `supabase/migrations/` in timestamp order. LIFE RPG is additive and does not replace existing TRACKED tables.
 
 With Supabase CLI:
 
@@ -79,22 +81,23 @@ npx supabase db push
 
 Or paste the migration SQL into the Supabase SQL editor and run it once.
 
-## Plaid Sandbox Setup
+## Plaid Production Setup
 
-This integration uses Plaid Transactions with `/link/token/create`, `/item/public_token/exchange`, and cursor-based `/transactions/sync`.
+The server-side client selects `sandbox`, `development`, or `production` exclusively from `PLAID_ENV`. Production Link is restricted to Canadian institutions, uses the authenticated Supabase user UUID as `client_user_id`, and never accepts a client-selected Plaid user identity.
+
+Transactions remains the required product. Link collects additional Investments consent, then the backend calls Investments endpoints only when Plaid actually returns an `investment` account. This follows Plaid's personal-finance product initialization guidance without excluding institutions that only expose Transactions/balances. Unsupported Investments endpoints degrade to `Balance only`; they do not fail the Item or remove manual investment accounts.
 
 Install and deploy the Edge Functions:
 
 ```bash
-npx supabase secrets set PLAID_CLIENT_ID=YOUR_PLAID_CLIENT_ID
-npx supabase secrets set PLAID_SECRET=YOUR_PLAID_SANDBOX_SECRET
-npx supabase secrets set PLAID_ENV=sandbox
-npx supabase secrets set PLAID_WEBHOOK_URL=https://YOUR_PROJECT_REF.supabase.co/functions/v1/plaid-webhook
+npx supabase secrets set PLAID_CLIENT_ID="YOUR_PLAID_CLIENT_ID" PLAID_SECRET="YOUR_PLAID_PRODUCTION_SECRET" PLAID_ENV="production" PLAID_WEBHOOK_URL="https://YOUR_PROJECT_REF.supabase.co/functions/v1/plaid-webhook"
+npx supabase db push
 npx supabase functions deploy plaid-create-link-token
 npx supabase functions deploy plaid-exchange-public-token
 npx supabase functions deploy plaid-sync-transactions
 npx supabase functions deploy plaid-webhook
 npx supabase functions deploy plaid-disconnect-item
+npx supabase functions deploy life-rpg-reconcile
 ```
 
 In the Plaid Dashboard, set the webhook URL for the app/environment to:
@@ -103,26 +106,22 @@ In the Plaid Dashboard, set the webhook URL for the app/environment to:
 https://YOUR_PROJECT_REF.supabase.co/functions/v1/plaid-webhook
 ```
 
-Sandbox test flow:
+For desktop-web testing from localhost, leave `PLAID_REDIRECT_URI` unset; Plaid can complete OAuth in a popup. Once the frontend has a real HTTPS deployment, set `PLAID_REDIRECT_URI` to that deployment's `/money` URL and add the exact same URL to the Plaid Production allowed redirect URI list. Never set the example placeholder as a secret.
 
-1. Sign in to TRACKED and open Money.
-2. Click Connect Account.
-3. Select a Plaid Sandbox institution.
-4. Use Plaid Sandbox test credentials.
-5. Confirm linked accounts appear in Accounts.
-6. Confirm transactions appear in Transactions with categories and Plaid badges.
-7. Click Sync on a connected account and verify transactions are not duplicated.
-8. Use Plaid Sandbox transaction/webhook tools to test modified and removed transaction updates.
-9. Sign in as a second user and confirm only that user's Plaid items, accounts, and transactions are visible.
+Production test flow (avoid consuming duplicate Trial Items):
 
-To switch later to Production, change only server-side Plaid configuration:
-
-```bash
-npx supabase secrets set PLAID_SECRET=YOUR_PLAID_PRODUCTION_SECRET
-npx supabase secrets set PLAID_ENV=production
-```
-
-Before Production, confirm Plaid Dashboard Production access for Canada, allowed redirect/webhook settings, and institution/product access for Transactions.
+1. While still configured for Sandbox, disconnect the old Sandbox Item in TRACKED if it should no longer be active. Imported history is retained.
+2. Set Production secrets, push migrations, deploy all five Plaid functions, and run the frontend locally or from its real HTTPS deployment.
+3. Confirm the Production webhook in the Plaid Dashboard. Confirm a redirect URI only when one is actually configured.
+4. Connect CIBC once. Select every account CIBC exposes in Link; do not start a second CIBC Item to look for missing accounts.
+5. Review Edge Function logs for `institution_connected`, `accounts_reconciled`, `transactions_complete`, and `plaid-investments` events. Logs include counts/type/subtype/capability state, never credentials or access tokens.
+6. Resolve any `Possible existing account` card by explicitly linking it to the matching manual TRACKED account or choosing `Keep separate`.
+7. Confirm TFSA, RRSP, FHSA, and brokerage accounts retain their subtype labels and contribute one balance each to net worth.
+8. If status is `Balance only`, confirm the Plaid balance updates while the UI says holdings are unavailable. This is a supported CIBC fallback.
+9. If investment accounts were not returned at all, confirm existing manual accounts remain untouched.
+10. Connect American Express once and confirm the Cobalt account is mapped to Credit Card.
+11. Run Sync twice and confirm neither spending transactions nor investment holdings/activity duplicate.
+12. Use Refresh connection for login/consent repair instead of creating another Item for the same institution.
 
 ## Data Semantics
 
@@ -132,10 +131,19 @@ Before Production, confirm Plaid Dashboard Production access for Canada, allowed
 - Transfer transactions use `account_id` as the source account and `destination_account_id` as the destination account. Transfers are excluded from income, spending, and budget totals.
 - Plaid outflows are normalized to positive `expense` rows. Plaid inflows are normalized to positive `income` rows. Manual category edits set `category_source = manual` and are not overwritten by future syncs.
 - Plaid access tokens are stored in `private.plaid_credentials`; normal frontend clients only read safe metadata from `public.plaid_items`.
+- Plaid investment securities, holdings, and activity live in `investment_securities`, `investment_holdings`, and `investment_transactions`. Investment activity never enters the normal `transactions` spending pipeline.
+- A stable `plaid_account_id` updates an existing synced account. Potential manual matches require an explicit user decision and the pending Plaid row is excluded from net worth until resolved.
+- The first successful Investments Transactions import requests up to 24 months. Later syncs use a bounded seven-day overlap; holdings are full-snapshot upserts with stale positions removed only for the same owned Item.
 - Recurring bill definitions live in `bills`; payment history lives in `bill_payments`.
 - Recurring calendar-capable records stay in their source tables (`calendar_events`, `bills`, `tasks`, and `chores`); visible occurrences are generated in the application layer for bounded date ranges.
 - Chore definitions keep `next_due_date` for fast dashboard queries; completion events live in `chore_completions`.
 - Goal progress updates are deltas in `goal_updates.delta`; `goals.current_value` is maintained by database triggers from `initial_value + sum(delta)`.
+- LIFE RPG starts overall progression at Level 24 with 48,300 baseline XP. Pre-initialization activity never enters the XP ledger.
+- `rpg_xp_events` and `task_completions` are immutable, idempotent system records. Authenticated users can read their own rows; only trusted functions can write them.
+- Recurring task completion is occurrence-based. The authenticated `complete_task_occurrence` RPC records one occurrence, snapshots its RPG metadata, awards stable XP slots, and advances or finishes the series atomically.
+- Calendar Social/Career XP uses the event's captured profile timezone. Elapsed qualifying occurrences are capped; no attendance state is implied.
+- Wealth XP is conservative: no transaction-level awards. A completed month can earn one Hard award when finalized, transfer-filtered savings meets an explicit target.
+- Weekly reports use Sunday–Saturday in the profile timezone. Closed reports are immutable and never claim historical net-worth movement.
 
 ## Run Locally
 
@@ -149,7 +157,9 @@ Open `http://localhost:3000`.
 
 ```bash
 npm run lint
-npm run build
+npx tsc --noEmit
+npm test
+npm run build # run with Node 24
 ```
 
 Both commands should pass before deployment.
@@ -170,8 +180,9 @@ components/shell/     Authenticated app shell and quick add
 components/ui/        shadcn-style shared primitives
 features/             Server actions and feature components
 lib/                  Supabase clients, auth, data, bootstrap, calculations
+lib/life-rpg/         Runtime-neutral progression, stat, quest, effect, achievement, and weekly rules
 supabase/migrations/  PostgreSQL schema and RLS policies
-supabase/functions/   Supabase Edge Functions for Plaid
+supabase/functions/   Supabase Edge Functions for Plaid and LIFE RPG reconciliation
 types/                Domain model types
 ```
 
@@ -183,3 +194,4 @@ types/                Domain model types
 - No multi-user household sharing.
 - No pantry, warranty, advanced health, investment market, or AI features.
 - Bill payment history is recorded, but marking a bill paid does not automatically create a financial transaction in V1.
+- Strength and Health use tagged tasks and quests only. Workout tracking, workout-based Locked In, investment-contribution XP, internal-transfer matching, direct Goal rewards, and historical XP reconstruction remain intentionally deferred.

@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState } from "@/components/ui/empty-state";
 import { FormGrid, HiddenRedirect, SelectField, TextField, TextareaField } from "@/components/ui/form";
 import { Progress } from "@/components/ui/progress";
+import { GOAL_CATEGORY_OPTIONS } from "@/lib/life-rpg";
 
 const statusOptions = [
   { value: "active", label: "Active" },
@@ -32,7 +33,7 @@ export function GoalManager({ goals, updates }: { goals: Goal[]; updates: GoalUp
           <HiddenRedirect to="/goals" />
           <FormGrid>
             <TextField label="Title" name="title" required />
-            <TextField label="Category" name="category" placeholder="Finance, health, career" />
+            <SelectField label="Category" name="category" options={GOAL_CATEGORY_OPTIONS} />
             <TextField label="Target value" name="target_value" type="number" min="0.01" step="0.01" required />
             <TextField label="Initial value" name="initial_value" type="number" min="0" step="0.01" defaultValue={0} />
             <TextField label="Unit" name="unit" defaultValue="count" required />
@@ -91,7 +92,14 @@ export function GoalManager({ goals, updates }: { goals: Goal[]; updates: GoalUp
                     <input type="hidden" name="id" value={goal.id} />
                     <FormGrid>
                       <TextField label="Title" name="title" defaultValue={goal.title} required />
-                      <TextField label="Category" name="category" defaultValue={goal.category} />
+                      <SelectField
+                        label="Category"
+                        name="category"
+                        defaultValue={goal.category?.toLowerCase() ?? ""}
+                        options={goal.category && !GOAL_CATEGORY_OPTIONS.some((option) => option.value === goal.category?.toLowerCase())
+                          ? [...GOAL_CATEGORY_OPTIONS, { value: goal.category, label: `${goal.category} (legacy)` }]
+                          : GOAL_CATEGORY_OPTIONS}
+                      />
                       <TextField label="Target value" name="target_value" type="number" min="0.01" step="0.01" defaultValue={goal.target_value} required />
                       <TextField label="Initial value" name="initial_value" type="number" min="0" step="0.01" defaultValue={goal.initial_value} />
                       <TextField label="Unit" name="unit" defaultValue={goal.unit} required />

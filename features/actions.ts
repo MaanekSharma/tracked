@@ -4,12 +4,20 @@ import { format, parseISO } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { calendarDateKey, dateTimeLocalToIso, DEFAULT_CALENDAR_TIME_ZONE, normalizeRecurrenceAlias } from "@/lib/calendar-recurrence";
+import {
+  calendarDateKey,
+  dateTimeLocalToIso,
+  DEFAULT_CALENDAR_TIME_ZONE,
+  normalizeRecurrenceAlias,
+  normalizeRecurrenceWeekdays,
+} from "@/lib/calendar-recurrence";
 import { getNextRecurrenceDate } from "@/lib/calculations";
 import { env } from "@/lib/env";
 import { hasFutureRecurrence } from "@/lib/recurrence-progress";
+import { requestLifeRpgReconciliation } from "@/lib/life-rpg/reconcile";
+import { RPG_CATEGORIES, RPG_DIFFICULTIES } from "@/lib/life-rpg";
 import { createClient } from "@/lib/supabase/server";
-import type { AccountType, BillingFrequency, Priority, Recurrence, TaskStatus } from "@/types/domain";
+import type { AccountType, BillingFrequency, Priority, Recurrence, TaskStatus, TransactionType } from "@/types/domain";
 
 const accountTypes = [
   "chequing",
@@ -118,11 +126,16 @@ function normalizeRecurrenceFields(
   const normalized = normalizeRecurrenceAlias(input.recurrence, input.recurrence_interval);
   const recurring = normalized.recurrence !== "none";
   const weekly = normalized.recurrence === "weekly";
+  const weekdays = normalizeRecurrenceWeekdays(input.recurrence_days_of_week);
+
+  if (recurring && weekly && weekdays.length === 0) {
+    throw new Error(`Choose at least one weekday for weekly ${label}s.`);
+  }
 
   return {
     recurrence: normalized.recurrence,
     recurrence_interval: recurring ? normalized.recurrenceInterval : 1,
-    recurrence_days_of_week: recurring && weekly && input.recurrence_days_of_week.length ? input.recurrence_days_of_week : null,
+    recurrence_days_of_week: recurring && weekly ? weekdays : null,
     recurrence_end_date: recurring ? input.recurrence_end_date : null,
     recurrence_count: recurring ? input.recurrence_count : null,
   };
@@ -180,6 +193,13 @@ async function mutate(
   try {
     const { supabase, user } = await requireMutationUser();
     await operation(supabase, user.id);
+    const scope = fallback === "/tasks" ? "task"
+      : fallback === "/calendar" ? "calendar"
+      : fallback === "/goals" ? "goal"
+      : fallback === "/home" ? "home"
+      : fallback === "/money" ? "wealth"
+      : "full";
+    await requestLifeRpgReconciliation(supabase, [scope]);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Unable to save changes.";
   }
@@ -302,9 +322,79 @@ export async function deleteAccountAction(formData: FormData) {
     "/money",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
-      await assertNoError(await supabase.from("accounts").delete().eq("id", id).eq("user_id", userId));
+      const { data: account, error: accountError } = await supabase
+        .from("accounts")
+        .select("id, plaid_item_uuid")
+        .eq("id", id)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (accountError) throw new Error("Unable to verify this account before deletion.");
+      if (!account) throw new Error("Account not found or you do not have permission to delete it.");
+
+      if (account.plaid_item_uuid) {
+        const { data: plaidItem, error: plaidItemError } = await supabase
+          .from("plaid_items")
+          .select("status")
+          .eq("id", account.plaid_item_uuid)
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (plaidItemError) throw new Error("Unable to verify this account's Plaid connection.");
+        if (!plaidItem || plaidItem.status !== "disconnected") {
+          throw new Error("Disconnect this bank connection before permanently deleting its accounts.");
+        }
+      }
+
+      const { data: deletedAccount, error: deleteError } = await supabase
+        .from("accounts")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", userId)
+        .select("id")
+        .maybeSingle();
+
+      if (deleteError) throw new Error("Unable to permanently delete this account.");
+      if (!deletedAccount) throw new Error("Account not found or you do not have permission to delete it.");
+
+      revalidatePath("/(app)", "layout");
     },
     "deleted",
+  );
+}
+
+export async function linkPlaidAccountAction(formData: FormData) {
+  await mutate(
+    formData,
+    "/money",
+    async (supabase) => {
+      const sourceAccountId = idSchema.parse(text(formData, "source_plaid_account_id"));
+      const targetAccountId = idSchema.parse(text(formData, "target_manual_account_id"));
+      await assertNoError(await supabase.rpc("link_manual_account_to_plaid", {
+        source_plaid_account_uuid: sourceAccountId,
+        target_manual_account_uuid: targetAccountId,
+      }));
+    },
+    "updated",
+  );
+}
+
+export async function keepPlaidAccountSeparateAction(formData: FormData) {
+  await mutate(
+    formData,
+    "/money",
+    async (supabase, userId) => {
+      const id = idSchema.parse(text(formData, "id"));
+      await assertNoError(
+        await supabase
+          .from("accounts")
+          .update({ reconciliation_status: "not_needed", include_in_net_worth: true })
+          .eq("id", id)
+          .eq("user_id", userId)
+          .not("plaid_account_id", "is", null),
+      );
+    },
+    "updated",
   );
 }
 
@@ -357,6 +447,7 @@ const transactionSchema = z.object({
   posted_date: optionalDate,
   notes: optionalText,
   pending: z.boolean(),
+  excluded_from_spending: z.boolean(),
 }).superRefine((value, ctx) => {
   if (value.type === "transfer") {
     if (!value.destination_account_id) {
@@ -364,9 +455,6 @@ const transactionSchema = z.object({
     }
     if (value.destination_account_id === value.account_id) {
       ctx.addIssue({ code: "custom", path: ["destination_account_id"], message: "Transfer accounts must differ." });
-    }
-    if (value.category_id) {
-      ctx.addIssue({ code: "custom", path: ["category_id"], message: "Transfers are not categorized for spending." });
     }
   }
 });
@@ -385,6 +473,7 @@ export async function createTransactionAction(formData: FormData) {
       posted_date: text(formData, "posted_date"),
       notes: text(formData, "notes"),
       pending: checked(formData, "pending"),
+      excluded_from_spending: checked(formData, "excluded_from_spending"),
     });
     const normalized = input.type === "transfer" ? { ...input, category_id: null } : { ...input, destination_account_id: null };
     await assertNoError(
@@ -416,6 +505,7 @@ export async function updateTransactionAction(formData: FormData) {
         posted_date: text(formData, "posted_date"),
         notes: text(formData, "notes"),
         pending: checked(formData, "pending"),
+        excluded_from_spending: checked(formData, "excluded_from_spending"),
       });
       const normalized = input.type === "transfer" ? { ...input, category_id: null } : { ...input, destination_account_id: null };
       await assertNoError(
@@ -424,6 +514,60 @@ export async function updateTransactionAction(formData: FormData) {
           .update({
             ...normalized,
             category_source: "manual",
+          })
+          .eq("id", id)
+          .eq("user_id", userId),
+      );
+    },
+    "updated",
+  );
+}
+
+const transactionMetadataSchema = z.object({
+  category_id: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+    z.string().uuid().nullable(),
+  ),
+  classification: z.enum(["automatic", ...transactionTypes]),
+  excluded_from_spending: z.boolean(),
+  notes: optionalText,
+});
+
+export async function updateTransactionMetadataAction(formData: FormData) {
+  await mutate(
+    formData,
+    "/money",
+    async (supabase, userId) => {
+      const id = idSchema.parse(text(formData, "id"));
+      const input = transactionMetadataSchema.parse({
+        category_id: text(formData, "category_id"),
+        classification: text(formData, "classification"),
+        excluded_from_spending: checked(formData, "excluded_from_spending"),
+        notes: text(formData, "notes"),
+      });
+      const { data: transaction, error } = await supabase
+        .from("transactions")
+        .select("id")
+        .eq("id", id)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error) throw new Error("Unable to load this transaction before saving.");
+      if (!transaction) throw new Error("Transaction not found or you do not have permission to edit it.");
+
+      const selectedType = input.classification === "automatic"
+        ? null
+        : input.classification as TransactionType;
+
+      await assertNoError(
+        await supabase
+          .from("transactions")
+          .update({
+            type_override: selectedType,
+            category_id: input.category_id,
+            category_source: "manual",
+            excluded_from_spending: input.excluded_from_spending,
+            notes: input.notes,
           })
           .eq("id", id)
           .eq("user_id", userId),
@@ -551,7 +695,7 @@ export async function markBillPaidAction(formData: FormData) {
       const id = idSchema.parse(text(formData, "id"));
       const { data: bill, error } = await supabase
         .from("bills")
-        .select("id, user_id, amount, next_due_date, recurring, recurrence, recurrence_interval, recurrence_end_date, recurrence_count, account_id")
+        .select("id, user_id, amount, next_due_date, recurring, recurrence, recurrence_interval, recurrence_days_of_week, recurrence_end_date, recurrence_count, account_id")
         .eq("id", id)
         .eq("user_id", userId)
         .single();
@@ -577,7 +721,9 @@ export async function markBillPaidAction(formData: FormData) {
         .select("id", { count: "exact", head: true })
         .eq("bill_id", id)
         .eq("user_id", userId);
-      const next = bill.recurring ? getNextRecurrenceDate(parseISO(bill.next_due_date), bill.recurrence, bill.recurrence_interval) : null;
+      const next = bill.recurring
+        ? getNextRecurrenceDate(parseISO(bill.next_due_date), bill.recurrence, bill.recurrence_interval, bill.recurrence_days_of_week)
+        : null;
       const nextDate = next ? format(next, "yyyy-MM-dd") : null;
       const active = hasFutureRecurrence({
         nextDate,
@@ -677,6 +823,8 @@ const taskSchema = z.object({
   priority: z.enum(priorities),
   due_date: optionalDate,
   due_time: optionalText,
+  rpg_category: z.preprocess((value) => value === "" ? null : value, z.enum(RPG_CATEGORIES).nullable()),
+  rpg_difficulty: z.enum(RPG_DIFFICULTIES),
 }).merge(recurrenceSchema);
 
 function normalizeTaskInput(input: z.infer<typeof taskSchema>) {
@@ -695,15 +843,22 @@ export async function createTaskAction(formData: FormData) {
       priority: text(formData, "priority") || "medium",
       due_date: text(formData, "due_date"),
       due_time: text(formData, "due_time"),
+      rpg_category: text(formData, "rpg_category"),
+      rpg_difficulty: text(formData, "rpg_difficulty") || "medium",
       ...recurrenceFormFields(formData),
     }));
-    await assertNoError(
-      await supabase.from("tasks").insert({
+    const requestedStatus = input.status;
+    const { data: task, error } = await supabase.from("tasks").insert({
         ...input,
-        completed_at: input.status === "completed" ? new Date().toISOString() : null,
+        status: requestedStatus === "completed" ? "open" : requestedStatus,
+        completed_at: null,
         user_id: userId,
-      }),
-    );
+      }).select("id").single();
+    if (error || !task) throw new Error(error?.message ?? "Unable to create task.");
+    if (requestedStatus === "completed") {
+      await requestLifeRpgReconciliation(supabase, ["full"]);
+      await assertNoError(await supabase.rpc("complete_task_occurrence", { target_task_id: task.id }));
+    }
   });
 }
 
@@ -720,18 +875,26 @@ export async function updateTaskAction(formData: FormData) {
         priority: text(formData, "priority") || "medium",
         due_date: text(formData, "due_date"),
         due_time: text(formData, "due_time"),
+        rpg_category: text(formData, "rpg_category"),
+        rpg_difficulty: text(formData, "rpg_difficulty") || "medium",
         ...recurrenceFormFields(formData),
       }));
+      const requestedStatus = input.status;
       await assertNoError(
         await supabase
           .from("tasks")
           .update({
             ...input,
-            completed_at: input.status === "completed" ? new Date().toISOString() : null,
+            status: requestedStatus === "completed" ? "open" : requestedStatus,
+            completed_at: null,
           })
           .eq("id", id)
           .eq("user_id", userId),
       );
+      if (requestedStatus === "completed") {
+        await requestLifeRpgReconciliation(supabase, ["full"]);
+        await assertNoError(await supabase.rpc("complete_task_occurrence", { target_task_id: id }));
+      }
     },
     "updated",
   );
@@ -741,11 +904,10 @@ export async function completeTaskAction(formData: FormData) {
   await mutate(
     formData,
     "/tasks",
-    async (supabase, userId) => {
+    async (supabase) => {
       const id = idSchema.parse(text(formData, "id"));
-      await assertNoError(
-        await supabase.from("tasks").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", id).eq("user_id", userId),
-      );
+      await requestLifeRpgReconciliation(supabase, ["full"]);
+      await assertNoError(await supabase.rpc("complete_task_occurrence", { target_task_id: id }));
     },
     "updated",
   );
@@ -904,7 +1066,7 @@ export async function createCalendarEventAction(formData: FormData) {
       category: text(formData, "category"),
       ...recurrenceFormFields(formData),
     }), timeZone);
-    await assertNoError(await supabase.from("calendar_events").insert({ ...input, user_id: userId }));
+    await assertNoError(await supabase.from("calendar_events").insert({ ...input, timezone: timeZone, user_id: userId }));
   });
 }
 
@@ -914,6 +1076,7 @@ export async function updateCalendarEventAction(formData: FormData) {
     "/calendar",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
+      await requestLifeRpgReconciliation(supabase, ["calendar"]);
       const timeZone = await getUserTimeZone(supabase, userId);
       const input = normalizeCalendarEventInput(eventSchema.parse({
         title: text(formData, "title"),
@@ -925,7 +1088,7 @@ export async function updateCalendarEventAction(formData: FormData) {
         category: text(formData, "category"),
         ...recurrenceFormFields(formData),
       }), timeZone);
-      await assertNoError(await supabase.from("calendar_events").update(input).eq("id", id).eq("user_id", userId));
+      await assertNoError(await supabase.from("calendar_events").update({ ...input, timezone: timeZone }).eq("id", id).eq("user_id", userId));
     },
     "updated",
   );
@@ -937,6 +1100,7 @@ export async function deleteCalendarEventAction(formData: FormData) {
     "/calendar",
     async (supabase, userId) => {
       const id = idSchema.parse(text(formData, "id"));
+      await requestLifeRpgReconciliation(supabase, ["calendar"]);
       await assertNoError(await supabase.from("calendar_events").delete().eq("id", id).eq("user_id", userId));
     },
     "deleted",
@@ -1008,7 +1172,7 @@ export async function completeChoreAction(formData: FormData) {
       const id = idSchema.parse(text(formData, "id"));
       const { data: chore, error } = await supabase
         .from("chores")
-        .select("id, frequency, recurrence_interval, recurrence_end_date, recurrence_count")
+        .select("id, frequency, recurrence_interval, recurrence_days_of_week, recurrence_end_date, recurrence_count")
         .eq("id", id)
         .eq("user_id", userId)
         .single();
@@ -1028,7 +1192,7 @@ export async function completeChoreAction(formData: FormData) {
         .select("id", { count: "exact", head: true })
         .eq("chore_id", id)
         .eq("user_id", userId);
-      const next = getNextRecurrenceDate(completed, chore.frequency, chore.recurrence_interval);
+      const next = getNextRecurrenceDate(completed, chore.frequency, chore.recurrence_interval, chore.recurrence_days_of_week);
       const nextDate = next ? format(next, "yyyy-MM-dd") : null;
       const active = hasFutureRecurrence({
         nextDate,

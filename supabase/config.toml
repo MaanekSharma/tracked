@@ -2,3 +2,7 @@ project_id = "tracked"
 
 [functions.plaid-webhook]
 verify_jwt = false
+
+[functions.life-rpg-reconcile]
+# Authentication is enforced inside the function so user JWTs and exact service bearers both work.
+verify_jwt = false
